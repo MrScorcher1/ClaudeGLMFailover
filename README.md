@@ -237,6 +237,8 @@ The countdown starts the moment Claude Code exits, so the idle window is visible
 
 **The watcher exits when Claude Code does.** The pane deliberately outlives Claude Code — it runs a shell so the relaunch has somewhere to be typed — so pane death alone never fires on a normal `/exit`. Without an idle timeout the watcher would survive every clean exit, and a stale one blocks a new watcher on the same pane, leaving a later session silently unwatched.
 
+**It answers exactly one prompt, and only that one.** The first swap under a new profile stops at Claude Code's "Detected a custom API key" approval, which is stored per config dir. The watcher answers it, but the conditions are deliberately narrow: it fires only from inside a swap it started, only while both the prompt's title *and* its footer are on screen, and only when Claude Code's input bar is absent. That last check matters because `--continue` replays the transcript — a conversation that merely *discussed* the prompt would otherwise put its text back on screen and get "1" typed into the chat as a message. It selects *Yes* explicitly rather than pressing Enter, because the highlighted default is *No*.
+
 **The watcher refuses to type into a live prompt.** It confirms Claude Code actually exited before sending anything. If `/exit` doesn't take, it aborts and tells you to swap manually rather than submitting shell commands as chat messages.
 
 **No `pipefail`.** `grep -q` exits on first match and SIGPIPEs the upstream `sed` (exit 141), which under `pipefail` reports failure on a *successful* match — silently disabling the monitor.
@@ -267,6 +269,11 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Both guard paths: refusal on a profile with no recent transcript, and on a changed working directory, each leaving the session running
 - Cause-based throttling: a working-directory refusal retried after 61s, a profile mismatch held for the full cooldown
 - The one-time API-key prompt answered automatically, and *not* answered when the same text appears in replayed history
+- Args files: shell metacharacters rejected, injection attempt produced no side effect, quoted paths containing spaces survive as one argument
+- Status bar across a full lifecycle: armed → countdown → stopped, with the pane closed only when the shell was idle and left alone when a command was still running
+- Reaction time: bar turns over within 1s of Claude Code exiting
+- Stale-watcher fix: a watcher no longer survives a tmux server restart onto a recycled pane id
+- A profile at a path fitting no naming convention, given as an absolute path
 - Shell isolation: no `ANTHROPIC_*` leakage
 
 **Not verifiable in advance:** whether your real usage-limit message matches `PATTERN`. Until you hit a genuine limit and confirm the swap fired, treat the failover half as provisional.
@@ -280,7 +287,10 @@ bin/claude-local                     launcher — proxy lifecycle + scoped env
 bin/claude-failover.sh               tmux watcher
 proxy/config.yaml                    LiteLLM model + routing config
 shell/claude-failover.bash           one-command launcher + profile selection
-docs/                                full spec, gates, and failure modes
+docs/                                specs, gates, and failure modes
+  spec-explicit-profiles.md          current design for profile handling
+  setup-and-failover-spec.md         original build spec (historical)
+  update-one-command-launcher.md     superseded launcher design (historical)
 ```
 
 Credentials are read from the environment only. Nothing in this repo contains a key.
