@@ -233,6 +233,7 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `EXPECT_PANE_DIR` | unset | Directory the session started in |
 | `SESSION_PORT` | unset | Proxy port this session owns; stopped on exit. Unset means the shared 4000, never stopped. |
 | `CLAUDE_LOCAL_PORT` | 4000 | Port `claude-local` runs the proxy on |
+| `LITELLM_BIN` | `~/.local/bin/litellm` | Path to the LiteLLM binary. Point it at a venv or pipx install. |
 | `CLAUDE_FAILOVER_PORT_LO` / `_HI` | 4100 / 4199 | Range per-session ports are allocated from |
 | `LOG_FILE` | `~/.claude-failover.log` | Log destination |
 
@@ -312,6 +313,8 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Stale-watcher fix: a watcher no longer survives a tmux server restart onto a recycled pane id
 - A profile at a path fitting no naming convention, given as an absolute path
 - Shell isolation: no `ANTHROPIC_*` leakage
+- Proxy bind: `127.0.0.1:<port>` only, with the same request refused when sent to the machine's LAN address. Confirmed the pre-fix behaviour too — without `--host`, that request returned 200 with no auth header.
+- Per-session proxy lifecycle: started by `claude-local` on the session's port, stopped by the watcher on idle exit, port released
 
 **Not verifiable in advance:** whether your real usage-limit message matches `PATTERN`. Until you hit a genuine limit and confirm the swap fired, treat the failover half as provisional.
 

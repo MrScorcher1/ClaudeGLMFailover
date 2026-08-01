@@ -1,9 +1,14 @@
 > **Historical — superseded in part.** This is the original build spec (Parts 1-3)
-> and remains accurate for the proxy, the launcher, and how the gates were run.
+> and remains accurate for how the gates were run.
 > **Part 3's inline watcher script is out of date** — the shipped watcher is
 > `bin/claude-failover.sh`, which since gained a pre-swap guard, an idle exit,
 > and API-key prompt handling. Copy from `bin/`, never from this document.
 > Profile handling described here is superseded by `spec-explicit-profiles.md`.
+> The proxy launch commands below have been corrected to pass
+> `--host 127.0.0.1`; the original text omitted it, and LiteLLM's default bind
+> is `0.0.0.0`, which exposes an unauthenticated proxy holding your NVIDIA key
+> to anything that can route to the machine. See "The proxy is loopback-only"
+> in the README.
 
 # GLM-5.2 on Claude Code — Complete Setup and Failover
 
@@ -213,7 +218,7 @@ Start it in the background so this phase can continue in the same shell, then po
 
 ```bash
 cd ~/glm-proxy
-nohup litellm --config config.yaml --port 4000 > ~/glm-proxy/litellm.log 2>&1 &
+nohup litellm --config config.yaml --host 127.0.0.1 --port 4000 > ~/glm-proxy/litellm.log 2>&1 &
 
 for _ in $(seq 1 30); do
   curl -sf --max-time 2 http://127.0.0.1:4000/v1/models >/dev/null 2>&1 && break
@@ -280,7 +285,7 @@ if curl -sf --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; the
   echo "[claude-local] translator already running on :$PORT"
 else
   echo "[claude-local] starting translator on :$PORT ..."
-  nohup litellm --config "$PROXY_DIR/config.yaml" --port "$PORT" > "$LOG" 2>&1 &
+  nohup litellm --config "$PROXY_DIR/config.yaml" --host 127.0.0.1 --port "$PORT" > "$LOG" 2>&1 &
 
   # 3. Block until it answers successfully. Never hand off to a cold proxy.
   ready=0
@@ -447,7 +452,7 @@ python3 -m venv ~/glm-proxy/venv
 ```
 Then change the launcher's start line to call the venv binary directly:
 ```bash
-nohup "$HOME/glm-proxy/venv/bin/litellm" --config "$PROXY_DIR/config.yaml" --port "$PORT" > "$LOG" 2>&1 &
+nohup "$HOME/glm-proxy/venv/bin/litellm" --config "$PROXY_DIR/config.yaml" --host 127.0.0.1 --port "$PORT" > "$LOG" 2>&1 &
 ```
 Alternatively `pipx install litellm`, or `pip install --break-system-packages` as a last resort. If you use a venv, Gate 1 must be run as `~/glm-proxy/venv/bin/litellm --version`.
 
