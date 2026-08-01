@@ -334,6 +334,7 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Shell isolation: no `ANTHROPIC_*` leakage
 - Proxy bind: `127.0.0.1:<port>` only, with the same request refused when sent to the machine's LAN address. Confirmed the pre-fix behaviour too — without `--host`, that request returned 200 with no auth header.
 - Pre-flight honesty: with the watcher script or `claude-local` missing, the launcher says **NOT armed** and names the missing file rather than reporting armed. Both cases previously printed "watcher armed" and started nothing.
+- `shellcheck` clean on `bin/claude-local` and `bin/claude-failover.sh` with no suppressions. `shell/claude-failover.bash` needs `-e SC2148` (it is a sourced fragment, not a script) and reports one false positive on `'$('` — a literal in the list of metacharacters the args parser rejects, which must not expand.
 - Pane cleanup scoping: a `cf-*` session was cleaned up, while a user-named session and one merely containing "cf" were both left alone
 - Status bar honesty on the detached path: with the watcher missing, the bar came up red and **NOT armed** instead of green and armed. It is set from the watcher's result, after it starts.
 - One-way enforcement: after a swap, a fresh `Rate limit hit` on screen produced no second swap and the session was left running
