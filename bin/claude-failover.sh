@@ -34,7 +34,21 @@ EXIT_TIMEOUT="${EXIT_TIMEOUT:-20}"    # max wait for Claude Code to actually exi
 READY_TIMEOUT="${READY_TIMEOUT:-90}"  # max wait for the new session to come up
 COOLDOWN="${COOLDOWN_SECONDS:-900}"   # ignore detections for this long after a swap
 IDLE_EXIT="${IDLE_EXIT_SECONDS:-120}" # quit if Claude Code stays gone this long (0 = never)
+WD_COOLDOWN="${WD_COOLDOWN_SECONDS:-60}" # short throttle for the self-correcting cd case
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
+
+# Freshness window for the pre-swap guard, in MINUTES, derived from the longest
+# cooldown rather than set independently. The two timers interact: a session
+# refused twice has a transcript older than a fixed window, so the next attempt
+# would fail freshness and log a misleading cause. Deriving it (4x the longest
+# cooldown) means changing one cannot silently break the other.
+FRESH_WINDOW="${FRESH_WINDOW_MINUTES:-$(( (COOLDOWN * 4 + 59) / 60 ))}"
+
+# Set by claude-failover so the watcher can refuse a swap that would resume the
+# wrong conversation. Unset means a hand-started watcher, which skips the guard
+# entirely and behaves as it did before.
+EXPECT_CONFIG_DIR="${EXPECT_CONFIG_DIR:-}"
+EXPECT_PANE_DIR="${EXPECT_PANE_DIR:-}"
 
 # Absolute path rather than a bare name (Part 2, Failure Mode D). claude-local
 # is a real executable on PATH here, so the bare name would resolve — but the
@@ -53,6 +67,8 @@ CLAUDE_LOCAL="$HOME/.local/bin/claude-local"
 RELAUNCH_CMD="${RELAUNCH_CMD:-$CLAUDE_LOCAL --continue}"
 
 LAST_SWAP=0
+LAST_REFUSAL=0
+REFUSAL_WAIT=0
 
 usage() {
   echo "usage: $0 <tmux-pane-id>   e.g. $0 %3" >&2
@@ -131,7 +147,74 @@ wait_for_session() {
   return 1
 }
 
+_cf_realpath() {
+  readlink -f -- "$1" 2>/dev/null || printf '%s' "$1"
+}
+
+# Freshness, not name derivation. Deriving the project directory by replacing
+# '/' with '-' is lossy — /a/my-project and /a/my/project encode identically —
+# and because the result would feed a hard refusal, a collision means every
+# swap on that project fails permanently. The session that just hit its limit
+# was writing its transcript seconds ago, which is a stronger signal and needs
+# no knowledge of the encoding.
+_cf_recent_transcript() {
+  local dir="$1" window="${2:-30}"   # minutes
+  [ -d "$dir/projects" ] || return 1
+  find "$dir/projects" -name '*.jsonl' -type f -mmin "-$window" 2>/dev/null \
+    | head -1 | grep -q .
+}
+
+# Refusals must be visible in the pane, not only in a log the user is not
+# reading. display-message targets the status line rather than the input
+# buffer, which is why it is safe with Claude Code in the foreground, where
+# send-keys would type into the chat.
+_cf_notify() {
+  tmux display-message -t "$PANE" -d 5000 \
+    "claude-failover: refused to swap — $1" 2>/dev/null
+}
+
+# Runs BEFORE anything is typed into the pane. The spec placed this immediately
+# before the relaunch send-keys, but by that point C-c, /exit and clear have
+# already run — refusing there would kill the session and decline to restore
+# it. This check is filesystem-only, so it costs nothing to do first.
+swap_guard_ok() {
+  [ -n "$EXPECT_CONFIG_DIR" ] || return 0
+
+  if ! _cf_recent_transcript "$EXPECT_CONFIG_DIR" "$FRESH_WINDOW"; then
+    log "REFUSING SWAP: no transcript written under $EXPECT_CONFIG_DIR in the last ${FRESH_WINDOW}m."
+    log "  Resuming would open an EMPTY session. Nothing was typed; your session is untouched."
+    log "  Check the active profile with: claude-failover --profile"
+    _cf_notify "no recent transcript in $EXPECT_CONFIG_DIR"
+    LAST_REFUSAL="$(date +%s)"
+    REFUSAL_WAIT="$COOLDOWN"        # cannot self-correct
+    return 1
+  fi
+
+  if [ -n "$EXPECT_PANE_DIR" ]; then
+    local now_dir
+    now_dir="$(tmux display-message -p -t "$PANE" '#{pane_current_path}' 2>/dev/null)"
+    # Compare resolved paths, or a symlinked project dir refuses spuriously.
+    if [ "$(_cf_realpath "$now_dir")" != "$(_cf_realpath "$EXPECT_PANE_DIR")" ]; then
+      log "REFUSING SWAP: working directory changed since session start."
+      log "  was: $EXPECT_PANE_DIR"
+      log "  now: $now_dir"
+      log "  --continue is directory-scoped and would resume a different conversation."
+      log "  cd back and the next attempt will proceed."
+      _cf_notify "working directory changed — cd back to $EXPECT_PANE_DIR"
+      LAST_REFUSAL="$(date +%s)"
+      REFUSAL_WAIT="$WD_COOLDOWN"   # self-correcting, so throttle briefly
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
 swap_to_glm() {
+  if ! swap_guard_ok; then
+    return 1
+  fi
+
   log "usage limit detected — swapping to GLM-5.2"
 
   # Ctrl-C first: after a limit error the input line may hold a partial prompt
@@ -163,7 +246,7 @@ swap_to_glm() {
   if wait_for_session; then
     LAST_SWAP="$(date +%s)"
     log "relaunched via claude-local --continue — now on GLM-5.2"
-    log "when your limit resets, exit and run: claude-personal --continue"
+    log "when your limit resets, exit and resume with your normal launcher + --continue"
     return 0
   fi
 
@@ -176,6 +259,11 @@ swap_to_glm() {
 
 log "watching pane $PANE (poll ${POLL}s, scan ${SCAN} lines, cooldown ${COOLDOWN}s, idle-exit ${IDLE_EXIT}s)"
 log "relaunch command: $RELAUNCH_CMD"
+if [ -n "$EXPECT_CONFIG_DIR" ]; then
+  log "guard: config dir $EXPECT_CONFIG_DIR, pane dir ${EXPECT_PANE_DIR:-<unset>}, freshness ${FRESH_WINDOW}m"
+else
+  log "guard: disabled (EXPECT_CONFIG_DIR unset — hand-started watcher)"
+fi
 log "logging to $LOG"
 
 trap 'log "monitor stopped"; exit 0' INT TERM
@@ -204,7 +292,8 @@ while true; do
   fi
 
   now="$(date +%s)"
-  if [ $((now - LAST_SWAP)) -ge "$COOLDOWN" ]; then
+  if [ $((now - LAST_SWAP)) -ge "$COOLDOWN" ] && \
+     [ $((now - LAST_REFUSAL)) -ge "$REFUSAL_WAIT" ]; then
     tail_text="$(pane_tail)"
     if grep -Eqi -- "$PATTERN" <<< "$tail_text"; then
       if foreground_is_claude; then

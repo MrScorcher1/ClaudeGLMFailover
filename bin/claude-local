@@ -55,10 +55,17 @@ fi
 #    they are never exported into your shell, so `claude-personal` and
 #    `claude-work` are unaffected.
 #
-#    Run under the personal profile, matching the `claude-personal` alias.
-#    Without this, `exec claude` would fall back to a bare ~/.claude profile
-#    with none of your settings or plugins.
-export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"
+#    Run under the personal profile by default, matching the `claude-personal`
+#    alias. Without this, `exec claude` would fall back to a bare ~/.claude
+#    profile with none of your settings or plugins.
+#
+#    MUST respect an inherited value. claude-failover invokes this as
+#      CLAUDE_CONFIG_DIR=<profile> claude-local --continue
+#    to resume under the profile the session actually ran in. An unconditional
+#    assignment here silently overrode that and resumed the wrong
+#    conversation — the exact failure the failover guard exists to prevent,
+#    one layer below where the guard can see it.
+export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-personal}"
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:$PORT"
 export ANTHROPIC_API_KEY="dummy-not-used"
