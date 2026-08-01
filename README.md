@@ -179,3 +179,9 @@ docs/                                full spec, gates, and failure modes
 ```
 
 Credentials are read from the environment only. Nothing in this repo contains a key.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
