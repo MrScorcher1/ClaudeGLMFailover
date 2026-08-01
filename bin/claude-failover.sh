@@ -80,6 +80,9 @@ REFUSAL_WAIT=0
 # suppresses the pane cleanup, because that pane is then the only place the
 # user can see what happened and recover from it.
 SWAP_FAILED=0
+# Set once the session is running on GLM. Failover is one-way -- there is
+# nothing beyond GLM to fall back to -- so detection stops here.
+ON_GLM=0
 
 usage() {
   echo "usage: $0 <tmux-pane-id>   e.g. $0 %3" >&2
@@ -448,10 +451,16 @@ swap_to_glm() {
   if wait_for_session; then
     _cf_answer_key_prompt
     LAST_SWAP="$(date +%s)"
+    ON_GLM=1
     STATUS_WATCHING="colour33:white:failover: on GLM-5.2"
     _cf_status "$STATUS_WATCHING"
     log "relaunched via claude-local --continue — now on GLM-5.2"
     log "when your limit resets, exit and resume with your normal launcher + --continue"
+    # Detection stops here. PATTERN matches "Rate limit hit", and the NVIDIA
+    # free tier is roughly 40 requests/minute, so a 429 on GLM is likely. Once
+    # the cooldown lapsed, that message would trigger another swap -- exiting a
+    # working session and relaunching it on the same model, for no gain.
+    log "no longer watching for limit notices — there is nothing past GLM to fail over to"
     return 0
   fi
 
@@ -542,7 +551,8 @@ while true; do
   _cf_status "$STATUS_WATCHING"
 
   now="$(date +%s)"
-  if [ $((now - LAST_SWAP)) -ge "$COOLDOWN" ] && \
+  if [ "$ON_GLM" -eq 0 ] && \
+     [ $((now - LAST_SWAP)) -ge "$COOLDOWN" ] && \
      [ $((now - LAST_REFUSAL)) -ge "$REFUSAL_WAIT" ]; then
     tail_text="$(pane_tail)"
     if grep -Eqi -- "$PATTERN" <<< "$tail_text"; then
