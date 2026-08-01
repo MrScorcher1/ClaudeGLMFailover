@@ -279,7 +279,8 @@ close_pane_if_idle() {
   [ "$CLOSE_PANE" = "1" ] || return 0
   if [ "$SWAP_FAILED" = "1" ]; then
     log "leaving pane $PANE open — the swap failed, and this pane is where you recover:"
-    log "  claude --continue      (or your usual launcher)"
+    log "    $RELAUNCH_CMD"
+    log "  or go back to your subscription with your usual launcher + --continue"
     return 0
   fi
 
@@ -447,8 +448,12 @@ swap_to_glm() {
   # Abort rather than risk typing shell commands into a live chat prompt.
   if ! wait_for_shell; then
     log "ERROR: Claude Code did not exit within ${EXIT_TIMEOUT}s — aborting swap."
-    log "Nothing was typed into the session. Exit it manually, then run:"
-    log "  claude-local --continue"
+    # Do not claim nothing was typed: C-c and /exit went in above, and if the
+    # session did not exit then /exit landed in the chat input. Say what was
+    # actually sent, and stop before anything shell-shaped is typed.
+    log "  Ctrl-C and /exit were sent. Nothing further was typed, and no relaunch was attempted."
+    log "  Exit the session yourself, then resume on GLM with:"
+    log "    $RELAUNCH_CMD"
     return 1
   fi
 
@@ -480,8 +485,10 @@ swap_to_glm() {
   fi
 
   log "ERROR: session did not come back up within ${READY_TIMEOUT}s."
-  log "Check the pane manually. Common causes: claude-local not on PATH,"
-  log "NVIDIA_API_KEY unset, or the LiteLLM proxy failing to start."
+  log "  Common causes: claude-local not on PATH, NVIDIA_API_KEY unset, or the"
+  log "  LiteLLM proxy failing to start — check ${PROXY_DIR}/litellm-${SESSION_PORT:-4000}.log"
+  log "  Recover from that pane with the same command, which carries your profile:"
+  log "    $RELAUNCH_CMD"
   # The session was exited and did not come back, so this pane is the only
   # place left to see what happened and to run `claude --continue`. Closing it
   # on the idle timeout — the normal, tidy behaviour — would take that away
