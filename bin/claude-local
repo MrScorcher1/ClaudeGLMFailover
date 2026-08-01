@@ -34,7 +34,28 @@ if [ -z "${NVIDIA_API_KEY:-}" ]; then
   exit 1
 fi
 
-# 2. Reuse a healthy proxy; only start one if nothing is answering.
+# 2. Pre-flight. Everything below fails by timing out after 60s and then
+#    pointing at a log that was never created, because nohup's redirection
+#    fails before litellm ever runs. Naming the missing file costs nothing and
+#    turns a baffling minute into an immediate answer.
+if [ ! -d "$PROXY_DIR" ]; then
+  echo "ERROR: $PROXY_DIR does not exist." >&2
+  echo "  mkdir -p $PROXY_DIR && cp proxy/config.yaml $PROXY_DIR/config.yaml" >&2
+  exit 1
+fi
+if [ ! -f "$PROXY_DIR/config.yaml" ]; then
+  echo "ERROR: no proxy config at $PROXY_DIR/config.yaml" >&2
+  echo "  cp proxy/config.yaml $PROXY_DIR/config.yaml" >&2
+  exit 1
+fi
+if [ ! -x "$LITELLM" ]; then
+  echo "ERROR: no litellm binary at $LITELLM" >&2
+  echo "  install it, or point LITELLM_BIN at your venv/pipx copy:" >&2
+  echo "    LITELLM_BIN=~/glm-proxy/venv/bin/litellm claude-local" >&2
+  exit 1
+fi
+
+# 3. Reuse a healthy proxy; only start one if nothing is answering.
 #    -f makes curl fail on 4xx/5xx. Without it, a 401 counts as "ready"
 #    and Claude Code gets handed a proxy that rejects every request.
 PIDFILE="$PROXY_DIR/litellm-$PORT.pid"
@@ -55,7 +76,7 @@ else
     --host 127.0.0.1 --port "$PORT" > "$LOG" 2>&1 &
   PROXY_PID=$!
 
-  # 3. Block until it answers successfully. Never hand off to a cold proxy.
+  # 4. Block until it answers successfully. Never hand off to a cold proxy.
   ready=0
   for _ in $(seq 1 60); do
     if curl -sf --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
@@ -75,7 +96,7 @@ else
   echo "[claude-local] translator ready"
 fi
 
-# 4. Scoped environment. These exist only inside this script's process --
+# 5. Scoped environment. These exist only inside this script's process --
 #    they are never exported into your shell, so your normal launcher is
 #    unaffected.
 #
@@ -95,5 +116,5 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="$MODEL"
 export CLAUDE_CODE_SUBAGENT_MODEL="$MODEL"
 
-# 5. Replace this process with Claude Code, passing through any arguments.
+# 6. Replace this process with Claude Code, passing through any arguments.
 exec claude "$@"
