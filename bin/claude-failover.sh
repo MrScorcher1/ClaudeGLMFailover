@@ -33,7 +33,7 @@ READY_TIMEOUT="${READY_TIMEOUT:-90}"  # max wait for the new session to come up
 COOLDOWN="${COOLDOWN_SECONDS:-900}"   # ignore detections for this long after a swap
 IDLE_EXIT="${IDLE_EXIT_SECONDS:-120}" # quit if Claude Code stays gone this long (0 = never)
 WD_COOLDOWN="${WD_COOLDOWN_SECONDS:-60}" # short throttle for the self-correcting cd case
-KEY_PROMPT_TIMEOUT="${KEY_PROMPT_TIMEOUT_SECONDS:-30}" # max wait for the one-time API key prompt
+KEY_PROMPT_TIMEOUT="${KEY_PROMPT_TIMEOUT_SECONDS:-15}" # max wait for the one-time API key prompt
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
 
 # Freshness window for the pre-swap guard, in MINUTES, derived from the longest
@@ -234,7 +234,10 @@ _cf_answer_key_prompt() {
     # discussed this prompt can put its text back on screen. In that case the
     # input bar is also present, and typing "1" would send a chat message.
     # A real modal hides the input bar, so these are mutually exclusive.
-    if grep -q 'for shortcuts' <<< "$tail_text"; then
+    # Status-line text varies with configuration — a custom statusline can omit
+    # "for shortcuts" entirely — so match a few known variants. A missed match
+    # only costs the remaining timeout; it never causes a wrong keystroke.
+    if grep -qE 'for shortcuts|manual mode|esc to interrupt' <<< "$tail_text"; then
       return 0
     fi
 

@@ -190,7 +190,7 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `COOLDOWN_SECONDS` | 900 | Ignore detections after a swap |
 | `IDLE_EXIT_SECONDS` | 120 | Quit if Claude Code stays gone this long (`0` = never) |
 | `WD_COOLDOWN_SECONDS` | 60 | Short throttle after a working-directory refusal |
-| `KEY_PROMPT_TIMEOUT_SECONDS` | 30 | Max wait for the one-time API-key approval prompt |
+| `KEY_PROMPT_TIMEOUT_SECONDS` | 15 | Max wait for the one-time API-key approval prompt |
 | `FRESH_WINDOW_MINUTES` | 4× cooldown | Transcript freshness window for the pre-swap guard |
 | `EXPECT_CONFIG_DIR` | unset | Profile the guard checks. Unset disables the guard. |
 | `EXPECT_PANE_DIR` | unset | Directory the session started in |
