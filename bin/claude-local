@@ -37,7 +37,14 @@ fi
 # 2. Reuse a healthy proxy; only start one if nothing is answering.
 #    -f makes curl fail on 4xx/5xx. Without it, a 401 counts as "ready"
 #    and Claude Code gets handed a proxy that rejects every request.
+PIDFILE="$PROXY_DIR/litellm-$PORT.pid"
+
 if curl -sf --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
+  # Deliberately does NOT write the pidfile. Ports are allocated before the
+  # proxy exists, so two sessions can be handed the same one and the second
+  # arrives here and reuses the first's proxy. The pidfile is what tells the
+  # watcher "you started this, so you may stop it" — writing it now would let
+  # the second session kill a proxy the first is still using.
   echo "[claude-local] translator already running on :$PORT"
 else
   echo "[claude-local] starting translator on :$PORT ..."
@@ -46,6 +53,7 @@ else
   # without this flag anyone who can reach this machine can spend it.
   nohup "$LITELLM" --config "$PROXY_DIR/config.yaml" \
     --host 127.0.0.1 --port "$PORT" > "$LOG" 2>&1 &
+  PROXY_PID=$!
 
   # 3. Block until it answers successfully. Never hand off to a cold proxy.
   ready=0
@@ -61,6 +69,9 @@ else
     echo "Check the log: $LOG" >&2
     exit 1
   fi
+  # Record the pid we started, so the owning session's watcher can tell this
+  # proxy apart from one it merely found running.
+  printf '%s\n' "$PROXY_PID" > "$PIDFILE" 2>/dev/null || true
   echo "[claude-local] translator ready"
 fi
 

@@ -58,6 +58,10 @@ EXPECT_PANE_DIR="${EXPECT_PANE_DIR:-}"
 # never stopped because another session may be using it.
 SESSION_PORT="${SESSION_PORT:-}"
 
+# Must agree with PROXY_DIR in claude-local — that is where the pidfile proving
+# this session started the proxy is written.
+PROXY_DIR="${GLM_PROXY_DIR:-$HOME/glm-proxy}"
+
 # Absolute path rather than a bare name: the relaunch is typed into the pane's
 # shell, so this must not depend on that shell's PATH.
 CLAUDE_LOCAL="${CLAUDE_LOCAL_BIN:-$HOME/.local/bin/claude-local}"
@@ -225,14 +229,32 @@ _cf_cmdline_of() {
 stop_session_proxy() {
   [ -n "$SESSION_PORT" ] || return 0
   [ "$SESSION_PORT" != "4000" ] || return 0     # never stop the shared default
-  local pid cmdline
+  local pid cmdline pidfile started
   pid="$(_cf_pid_on_port "$SESSION_PORT")"
   [ -n "$pid" ] || return 0
+
+  # Ports are allocated at launch but proxies only start at swap time, so two
+  # sessions can be handed the same port and the second will reuse the first's
+  # proxy rather than starting its own. claude-local writes this pidfile ONLY
+  # when it actually started something, which is what makes "stop the proxy I
+  # started" different from "stop whatever is on my port".
+  pidfile="$PROXY_DIR/litellm-$SESSION_PORT.pid"
+  started="$(head -1 "$pidfile" 2>/dev/null)"
+  if [ -z "$started" ]; then
+    log "proxy on :$SESSION_PORT was not started by this session — leaving it running"
+    return 0
+  fi
+  if [ "$started" != "$pid" ]; then
+    log "process on :$SESSION_PORT (pid $pid) is not the one this session started (pid $started) — leaving it alone"
+    return 0
+  fi
+
   cmdline="$(_cf_cmdline_of "$pid")"
   case "$cmdline" in
     *litellm*)
       log "stopping this session's proxy on :$SESSION_PORT (pid $pid)"
-      kill "$pid" 2>/dev/null ;;
+      kill "$pid" 2>/dev/null
+      rm -f "$pidfile" 2>/dev/null ;;
     *)
       log "port $SESSION_PORT is held by something that is not litellm — leaving it alone" ;;
   esac

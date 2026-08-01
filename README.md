@@ -126,7 +126,7 @@ It is not automatic because every hop discards the prompt cache, so an automatic
 
 ### Proxy lifetime
 
-**A `claude-failover` session gets its own proxy** on a port allocated from 4100–4199, and the watcher stops it on the way out. Nothing lingers, and because the port belongs to that session alone, stopping it cannot disturb anything else.
+**A `claude-failover` session gets its own proxy** on a port allocated from 4100–4199, and the watcher stops it on the way out, so nothing lingers. The port is normally that session's alone; the one case where it is not is covered below.
 
 The proxy starts **lazily, at swap time** — while you are on your subscription no proxy is needed, so none is started.
 
@@ -137,6 +137,10 @@ relaunch command: CLAUDE_CONFIG_DIR=/home/you/.claude-personal CLAUDE_LOCAL_PORT
 ```
 
 That matters: if the port did not survive, the relaunch would allocate a different one, start a **second** proxy, and orphan the session's. Each proxy also writes its own `~/glm-proxy/litellm-<port>.log`, since a shared path would be truncated by whichever started last.
+
+**A watcher only stops a proxy its own session started.** Ports are allocated at launch, but the proxy is not started until swap time — so in that window a second session can be handed the same port, and when both swap, the second `claude-local` finds a healthy proxy there and reuses it rather than starting one. Two sessions then share a proxy, and a watcher that stopped "whatever is on my port" would pull it out from under the other session.
+
+`claude-local` writes `~/glm-proxy/litellm-<port>.pid` **only when it actually starts a proxy**, never when it reuses one. The watcher stops the proxy only if that file exists and names the pid currently listening. Otherwise it logs why it left it alone. The sharing itself is harmless — one proxy serves both fine.
 
 **A bare `claude-local` still uses the shared port 4000** and is never stopped automatically — it has no owning session, and another terminal may be using it. Stop it by hand when you want the memory back:
 
@@ -323,6 +327,7 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Shell isolation: no `ANTHROPIC_*` leakage
 - Proxy bind: `127.0.0.1:<port>` only, with the same request refused when sent to the machine's LAN address. Confirmed the pre-fix behaviour too — without `--host`, that request returned 200 with no auth header.
 - Pre-flight honesty: with the watcher script or `claude-local` missing, the launcher says **NOT armed** and names the missing file rather than reporting armed. Both cases previously printed "watcher armed" and started nothing.
+- Shared-port safety: a session that reused another's proxy declined to stop it and the proxy kept serving; the session that started it stopped it and cleaned up its pidfile; a stale pidfile naming a different pid produced a refusal rather than a wrong kill
 - macOS code paths exercised on Linux behind a `PATH` shim hiding `ss`: port-busy detection, free-port selection, and a real proxy identified and stopped through `lsof`
 - Per-session proxy lifecycle: started by `claude-local` on the session's port, stopped by the watcher on idle exit, port released
 

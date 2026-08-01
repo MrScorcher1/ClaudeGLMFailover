@@ -5,6 +5,7 @@ litellm.log
 
 # Local proxy runtime
 glm-proxy/
+*.pid
 venv/
 .venv/
 
