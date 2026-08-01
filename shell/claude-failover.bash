@@ -131,9 +131,20 @@ _cf_read_args() {
         return 1 ;;
     esac
   done
-  for tok in $line; do
+  # Quote-aware splitting via xargs rather than bare word splitting, so an
+  # argument containing spaces can be written as --plugin-dir "/a/my plugins".
+  # xargs handles quoting without invoking a shell, so nothing here executes;
+  # the metacharacter rejection above still applies.
+  local parsed
+  if ! parsed="$(printf '%s' "$line" | xargs -n1 printf '%s\n' 2>/dev/null)"; then
+    echo "claude-failover: args file rejected: $f" >&2
+    echo "  unmatched quote — check the quoting on that line" >&2
+    return 1
+  fi
+  while IFS= read -r tok; do
+    [ -n "$tok" ] || continue
     out="$out $(printf '%q' "$tok")"
-  done
+  done <<< "$parsed"
   printf '%s' "$out"
 }
 

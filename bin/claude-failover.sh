@@ -35,6 +35,7 @@ READY_TIMEOUT="${READY_TIMEOUT:-90}"  # max wait for the new session to come up
 COOLDOWN="${COOLDOWN_SECONDS:-900}"   # ignore detections for this long after a swap
 IDLE_EXIT="${IDLE_EXIT_SECONDS:-120}" # quit if Claude Code stays gone this long (0 = never)
 WD_COOLDOWN="${WD_COOLDOWN_SECONDS:-60}" # short throttle for the self-correcting cd case
+KEY_PROMPT_TIMEOUT="${KEY_PROMPT_TIMEOUT_SECONDS:-30}" # max wait for the one-time API key prompt
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
 
 # Freshness window for the pre-swap guard, in MINUTES, derived from the longest
@@ -210,6 +211,46 @@ swap_guard_ok() {
   return 0
 }
 
+# Claude Code asks whether to use the ANTHROPIC_API_KEY that claude-local sets,
+# and stores the answer per config dir — so the first swap under a NEW profile
+# stops here, with the session otherwise healthy.
+#
+# This answers it, but only while that exact prompt is on screen. It is not a
+# blind keypress: the highlighted default is "No (recommended)", which would
+# decline the proxy and leave the session unusable. Selecting "1" is the
+# verified Yes. If the prompt never appears (profile already approved) this
+# costs a few seconds and does nothing.
+# Whole visible pane, not just the tail. After a relaunch the screen has been
+# cleared, so a freshly-drawn prompt sits at the TOP with blank lines beneath —
+# pane_tail's `tail -n $SCAN` would discard it entirely.
+pane_full() {
+  tmux capture-pane -p -t "$PANE" 2>/dev/null \
+    | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+}
+
+_cf_answer_key_prompt() {
+  local waited=0 tail_text
+  # wait_for_session returns as soon as the process name is "claude", which is
+  # several seconds before the UI renders — so this must outlast that gap. It
+  # exits early either way: on the prompt, or once the normal UI is up.
+  while [ "$waited" -lt "$KEY_PROMPT_TIMEOUT" ]; do
+    tail_text="$(pane_full)"
+    if grep -q 'Detected a custom API key' <<< "$tail_text"; then
+      log "answering one-time API key approval for this profile (selecting Yes)"
+      tmux send-keys -t "$PANE" '1'
+      sleep 1
+      tmux send-keys -t "$PANE" Enter
+      return 0
+    fi
+    if grep -q 'for shortcuts' <<< "$tail_text"; then
+      return 0        # session is up and no prompt appeared
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  return 0
+}
+
 swap_to_glm() {
   if ! swap_guard_ok; then
     return 1
@@ -244,6 +285,7 @@ swap_to_glm() {
   tmux send-keys -t "$PANE" "$RELAUNCH_CMD" Enter
 
   if wait_for_session; then
+    _cf_answer_key_prompt
     LAST_SWAP="$(date +%s)"
     log "relaunched via claude-local --continue — now on GLM-5.2"
     log "when your limit resets, exit and resume with your normal launcher + --continue"
