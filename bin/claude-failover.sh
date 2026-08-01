@@ -87,7 +87,19 @@ log() {
 # The six real-world limit messages documented by claude-auto-retry.
 PATTERN='hour limit reached|usage limit reached|out of extra usage|hit your limit|Rate limit hit|Please try again in [0-9]+ hour'
 
+# tmux reuses pane ids across server restarts: kill the server, start a new one,
+# and %0/%1 are handed out again. So "the id still exists" is NOT proof it is the
+# same pane, and a watcher left over from a previous server will happily attach
+# itself to an unrelated new session. Pin the server identity too — if the
+# server pid changed, our pane is gone whatever the id says.
+TMUX_SERVER_PID="$(tmux display-message -p -t "$PANE" '#{pid}' 2>/dev/null)"
+
 pane_alive() {
+  if [ -n "$TMUX_SERVER_PID" ]; then
+    local pid
+    pid="$(tmux display-message -p '#{pid}' 2>/dev/null)"
+    [ "$pid" = "$TMUX_SERVER_PID" ] || return 1
+  fi
   tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx -- "$PANE"
 }
 

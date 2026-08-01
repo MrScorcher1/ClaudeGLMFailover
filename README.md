@@ -210,6 +210,8 @@ Freshness is checked rather than reconstructing the transcript filename. Claude 
 
 The two throttles differ by cause: a profile mismatch can't self-correct, so it waits out the full cooldown; a changed working directory can, so it retries after `WD_COOLDOWN_SECONDS`. The freshness window is derived from the longest cooldown rather than set independently, so a twice-refused session can't fail freshness for reasons unrelated to the original cause.
 
+**A pane id is not an identity.** tmux hands out `%0`, `%1`, … again after a server restart, so "that id still exists" doesn't mean it's the same pane. The watcher pins the tmux server pid at startup and exits if it changes — otherwise a leftover watcher re-attaches to an unrelated new session and can act on it with stale expectations.
+
 **The watcher exits when Claude Code does.** The pane deliberately outlives Claude Code — it runs a shell so the relaunch has somewhere to be typed — so pane death alone never fires on a normal `/exit`. Without an idle timeout the watcher would survive every clean exit, and a stale one blocks a new watcher on the same pane, leaving a later session silently unwatched.
 
 **The watcher refuses to type into a live prompt.** It confirms Claude Code actually exited before sending anything. If `/exit` doesn't take, it aborts and tells you to swap manually rather than submitting shell commands as chat messages.
