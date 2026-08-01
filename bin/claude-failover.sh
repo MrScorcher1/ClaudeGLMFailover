@@ -33,6 +33,7 @@ SETTLE="${SETTLE_SECONDS:-4}"      # pause after exiting Claude Code
 EXIT_TIMEOUT="${EXIT_TIMEOUT:-20}"    # max wait for Claude Code to actually exit
 READY_TIMEOUT="${READY_TIMEOUT:-90}"  # max wait for the new session to come up
 COOLDOWN="${COOLDOWN_SECONDS:-900}"   # ignore detections for this long after a swap
+IDLE_EXIT="${IDLE_EXIT_SECONDS:-120}" # quit if Claude Code stays gone this long (0 = never)
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
 
 # Absolute path rather than a bare name (Part 2, Failure Mode D). claude-local
@@ -173,16 +174,33 @@ swap_to_glm() {
   return 1
 }
 
-log "watching pane $PANE (poll ${POLL}s, scan ${SCAN} lines, cooldown ${COOLDOWN}s)"
+log "watching pane $PANE (poll ${POLL}s, scan ${SCAN} lines, cooldown ${COOLDOWN}s, idle-exit ${IDLE_EXIT}s)"
 log "relaunch command: $RELAUNCH_CMD"
 log "logging to $LOG"
 
 trap 'log "monitor stopped"; exit 0' INT TERM
 
+IDLE=0
+
 while true; do
   if ! pane_alive; then
     log "pane $PANE is gone — exiting"
     exit 0
+  fi
+
+  # The pane deliberately outlives Claude Code — it runs a shell so the swap
+  # has somewhere to type the relaunch — so pane death alone never fires on a
+  # normal /exit or Ctrl-C. Without this the watcher would survive every clean
+  # exit forever, and a stale watcher blocks a new one on the same pane,
+  # leaving a later session silently unwatched.
+  if foreground_is_claude; then
+    IDLE=0
+  else
+    IDLE=$((IDLE + POLL))
+    if [ "$IDLE_EXIT" -gt 0 ] && [ "$IDLE" -ge "$IDLE_EXIT" ]; then
+      log "Claude Code gone for ${IDLE}s — exiting"
+      exit 0
+    fi
   fi
 
   now="$(date +%s)"
@@ -191,6 +209,9 @@ while true; do
     if grep -Eqi -- "$PATTERN" <<< "$tail_text"; then
       if foreground_is_claude; then
         swap_to_glm
+        # swap_to_glm runs synchronously, so no polling happens while Claude is
+        # intentionally absent. Reset so a slow swap cannot trip the idle exit.
+        IDLE=0
       else
         log "limit text seen but Claude is not the foreground process — skipping"
       fi

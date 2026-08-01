@@ -127,6 +127,7 @@ It is not automatic because every hop discards the prompt cache, so an automatic
 | `EXIT_TIMEOUT` | 20 | Max wait for Claude Code to exit |
 | `READY_TIMEOUT` | 90 | Max wait for the new session |
 | `COOLDOWN_SECONDS` | 900 | Ignore detections after a swap |
+| `IDLE_EXIT_SECONDS` | 120 | Quit if Claude Code stays gone this long (`0` = never) |
 | `LOG_FILE` | `~/.claude-failover.log` | Log destination |
 
 ---
@@ -136,6 +137,8 @@ It is not automatic because every hop discards the prompt cache, so an automatic
 **Detection is text matching.** The watcher greps the pane tail for known limit wordings. Anthropic's phrasing changes over time — if yours differs, add it to `PATTERN` in `claude-failover.sh`. A silent non-match is this tool's most likely failure, and the log is how you tell.
 
 **The pane must run a shell, not Claude directly.** If Claude Code were the pane's own command, exiting it would close the pane and leave nowhere to type the relaunch.
+
+**The watcher exits when Claude Code does.** The pane deliberately outlives Claude Code — it runs a shell so the relaunch has somewhere to be typed — so pane death alone never fires on a normal `/exit`. Without an idle timeout the watcher would survive every clean exit, and a stale one blocks a new watcher on the same pane, leaving a later session silently unwatched.
 
 **The watcher refuses to type into a live prompt.** It confirms Claude Code actually exited before sending anything. If `/exit` doesn't take, it aborts and tells you to swap manually rather than submitting shell commands as chat messages.
 
