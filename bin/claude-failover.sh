@@ -355,7 +355,7 @@ swap_to_glm() {
   if wait_for_session; then
     _cf_answer_key_prompt
     LAST_SWAP="$(date +%s)"
-    STATUS_WATCHING="#[fg=black,bg=colour208] failover: on GLM-5.2 #[default] %H:%M "
+    STATUS_WATCHING="#[fg=white,bg=colour33] failover: on GLM-5.2 #[default] %H:%M "
     _cf_status "$STATUS_WATCHING"
     log "relaunched via claude-local --continue — now on GLM-5.2"
     log "when your limit resets, exit and resume with your normal launcher + --continue"
@@ -416,7 +416,7 @@ while true; do
       if [ "$REMAINING" -le "$FINAL_WARN" ]; then
         _cf_status "#[fg=white,bg=red] failover: stopping in ${REMAINING}s #[default] %H:%M "
       else
-        _cf_status "#[fg=black,bg=yellow] failover: stopping in ${REMAINING}s #[default] %H:%M "
+        _cf_status "#[fg=black,bg=colour226] failover: stopping in ${REMAINING}s #[default] %H:%M "
       fi
     fi
   fi

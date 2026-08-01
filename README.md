@@ -222,10 +222,12 @@ Those printed lines scroll away the moment tmux attaches, so the state also live
 | Bar | Meaning |
 |---|---|
 | green **failover: armed** | watching, subscription session |
-| orange **failover: on GLM-5.2** | swapped |
+| blue **failover: on GLM-5.2** | swapped |
 | yellow **failover: stopping in Ns** | Claude Code has exited; counting down to give up |
 | red **failover: stopping in Ns** | last `FINAL_WARN_SECONDS` (default 10) before it does |
 | red **failover: off** | watcher stopped |
+
+Green, yellow and red form one ramp about the watcher's lifecycle. The swapped state sits deliberately outside it in blue, because which backend you are on is not a severity — putting it in the warm ramp implied an urgency it does not have, and left it easy to confuse with the countdown at a glance.
 
 The countdown starts the moment Claude Code exits, so the idle window is visible rather than a silent wait, and it returns to green if you start Claude again in that pane before it expires. It is set with `-t <session>`, so it applies only to sessions this tool created and dies with them — if you run `claude-failover` inside your own tmux session, your status bar is left alone.
 
