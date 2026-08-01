@@ -451,5 +451,15 @@ while true; do
     fi
   fi
 
-  sleep "$POLL"
+  # Sleep in one-second slices, breaking out as soon as Claude Code leaves the
+  # foreground. Otherwise an exit is not noticed until the current POLL
+  # interval ends, and the bar sits on "armed" for up to POLL seconds after the
+  # session is already gone. The pane is still only scanned once per POLL --
+  # this just costs one cheap foreground check per second.
+  slept=0
+  while [ "$slept" -lt "$POLL" ]; do
+    sleep 1
+    slept=$((slept + 1))
+    foreground_is_claude || break
+  done
 done
