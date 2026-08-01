@@ -1,0 +1,14 @@
+model_list:
+  - model_name: glm-5.2
+    litellm_params:
+      model: openai/z-ai/glm-5.2
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_API_KEY
+
+litellm_settings:
+  drop_params: true
+  # NVIDIA implements /v1/chat/completions but NOT the OpenAI Responses API.
+  # LiteLLM 1.89.0 bridges /v1/messages -> upstream /v1/responses by default,
+  # which returns 404 from NVIDIA. This forces the chat/completions bridge.
+  # Source: litellm/__init__.py:231 (use_chat_completions_url_for_anthropic_messages)
+  use_chat_completions_url_for_anthropic_messages: true

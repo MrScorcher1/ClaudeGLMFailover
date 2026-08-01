@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROXY_DIR="$HOME/glm-proxy"
+PORT=4000
+MODEL="glm-5.2"
+LOG="$PROXY_DIR/litellm.log"
+# Absolute path: litellm is installed as a uv tool, not a plain pip install.
+LITELLM="$HOME/.local/bin/litellm"
+
+# Port 4000 previously belonged to litellm.service (an Ollama-backed proxy,
+# ~/litellm_config.yaml). That unit was stopped and disabled; if it ever comes
+# back it will fight this script for the port -- check with:
+#   systemctl is-enabled litellm.service   # expect: disabled
+#
+# To clear a wedged proxy, kill it by port rather than by name:
+#   kill "$(ss -ltnp 2>/dev/null | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
+
+# 1. Refuse to start without the upstream key.
+if [ -z "${NVIDIA_API_KEY:-}" ]; then
+  echo "ERROR: NVIDIA_API_KEY is not set." >&2
+  echo "Add this to ~/.bashrc ABOVE the non-interactive guard at line 6" >&2
+  echo "(the 'case \$- in ... *) return;;' block), then restart your terminal:" >&2
+  echo '  export NVIDIA_API_KEY="nvapi-..."' >&2
+  exit 1
+fi
+
+# 2. Reuse a healthy proxy; only start one if nothing is answering.
+#    -f makes curl fail on 4xx/5xx. Without it, a 401 counts as "ready"
+#    and Claude Code gets handed a proxy that rejects every request.
+if curl -sf --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
+  echo "[claude-local] translator already running on :$PORT"
+else
+  echo "[claude-local] starting translator on :$PORT ..."
+  nohup "$LITELLM" --config "$PROXY_DIR/config.yaml" --port "$PORT" > "$LOG" 2>&1 &
+
+  # 3. Block until it answers successfully. Never hand off to a cold proxy.
+  ready=0
+  for _ in $(seq 1 60); do
+    if curl -sf --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "ERROR: translator did not come up within 60s, or is returning errors." >&2
+    echo "Check the log: $LOG" >&2
+    exit 1
+  fi
+  echo "[claude-local] translator ready"
+fi
+
+# 4. Scoped environment. These exist only inside this script's process --
+#    they are never exported into your shell, so `claude-personal` and
+#    `claude-work` are unaffected.
+#
+#    Run under the personal profile, matching the `claude-personal` alias.
+#    Without this, `exec claude` would fall back to a bare ~/.claude profile
+#    with none of your settings or plugins.
+export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"
+
+export ANTHROPIC_BASE_URL="http://127.0.0.1:$PORT"
+export ANTHROPIC_API_KEY="dummy-not-used"
+export ANTHROPIC_CUSTOM_MODEL_OPTION="$MODEL"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="$MODEL"
+export CLAUDE_CODE_SUBAGENT_MODEL="$MODEL"
+
+# 5. Replace this process with Claude Code, passing through any arguments.
+exec claude "$@"
