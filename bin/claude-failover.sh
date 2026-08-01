@@ -76,6 +76,10 @@ RELAUNCH_CMD="${RELAUNCH_CMD:-$CLAUDE_LOCAL --continue}"
 LAST_SWAP=0
 LAST_REFUSAL=0
 REFUSAL_WAIT=0
+# Set when a swap exits the session and the relaunch never comes back. It
+# suppresses the pane cleanup, because that pane is then the only place the
+# user can see what happened and recover from it.
+SWAP_FAILED=0
 
 usage() {
   echo "usage: $0 <tmux-pane-id>   e.g. $0 %3" >&2
@@ -270,6 +274,11 @@ stop_session_proxy() {
 # say so.
 close_pane_if_idle() {
   [ "$CLOSE_PANE" = "1" ] || return 0
+  if [ "$SWAP_FAILED" = "1" ]; then
+    log "leaving pane $PANE open — the swap failed, and this pane is where you recover:"
+    log "  claude --continue      (or your usual launcher)"
+    return 0
+  fi
   local cmd
   cmd="$(tmux display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null)"
   case "$cmd" in
@@ -449,6 +458,13 @@ swap_to_glm() {
   log "ERROR: session did not come back up within ${READY_TIMEOUT}s."
   log "Check the pane manually. Common causes: claude-local not on PATH,"
   log "NVIDIA_API_KEY unset, or the LiteLLM proxy failing to start."
+  # The session was exited and did not come back, so this pane is the only
+  # place left to see what happened and to run `claude --continue`. Closing it
+  # on the idle timeout — the normal, tidy behaviour — would take that away
+  # right when it matters most.
+  SWAP_FAILED=1
+  STATUS_WATCHING="red:white:failover: swap FAILED — see $LOG"
+  _cf_status "$STATUS_WATCHING"
   # Do not set LAST_SWAP — leave the monitor free to retry.
   return 1
 }
@@ -462,7 +478,18 @@ else
 fi
 log "logging to $LOG"
 
-trap '_cf_status "red:white:failover: off"; stop_session_proxy; log "monitor stopped"; exit 0' INT TERM
+# The bar outlives the watcher — it is set on the tmux session, not this
+# process. After a failed swap that makes it the last standing explanation, so
+# it must not be overwritten with the tidy "off" state.
+_cf_final_status() {
+  if [ "$SWAP_FAILED" = "1" ]; then
+    _cf_status "red:white:failover: swap FAILED — see $LOG"
+  else
+    _cf_status "red:white:failover: off"
+  fi
+}
+
+trap '_cf_final_status; stop_session_proxy; log "monitor stopped"; exit 0' INT TERM
 
 IDLE=0
 
@@ -488,7 +515,7 @@ while true; do
     if [ "$IDLE_EXIT" -gt 0 ]; then
       if [ "$IDLE" -ge "$IDLE_EXIT" ]; then
         log "Claude Code gone for ${IDLE}s — exiting"
-        _cf_status "red:white:failover: off"
+        _cf_final_status
         stop_session_proxy
         close_pane_if_idle
         exit 0

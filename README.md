@@ -302,6 +302,7 @@ The countdown starts the moment Claude Code exits, so the idle window is visible
 - **~40 requests/minute** on the NVIDIA free tier. Agent loops are request-dense — a trivial write-then-read task costs about four. Expect 429s on wide operations. A 200 RPM increase is available through NVIDIA's developer program.
 - **Oversized transcripts cannot fail over.** If the conversation exceeds what GLM can usefully hold, the resume fails, and you cannot compact your way out — compaction costs a model call you no longer have. Run `/compact` *before* approaching your cap. This is the one failure with no recovery.
 - **Failover is one-way** and tmux-only. Sessions outside tmux are not watched.
+- **A failed swap leaves the session down.** If the relaunch never comes back, the watcher stops but deliberately leaves the pane and a red status bar in place; recover with `claude --continue` from that pane.
 - **The first swap under a new profile hits a one-time approval prompt**, because Claude Code stores per config dir whether to use the `ANTHROPIC_API_KEY` it finds. The watcher answers it automatically — but only while that exact prompt is on screen, and by selecting *Yes* explicitly. The highlighted default is *No*, so a blind Enter would decline the proxy.
 - **Subscription and proxy auth are mutually exclusive.** Claude Code is either on your subscription or pointed at the proxy; `ANTHROPIC_BASE_URL` is read once at startup. This is why failover restarts the session instead of switching models in place, and why `--fallback-model` cannot reach GLM.
 
@@ -327,6 +328,7 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Shell isolation: no `ANTHROPIC_*` leakage
 - Proxy bind: `127.0.0.1:<port>` only, with the same request refused when sent to the machine's LAN address. Confirmed the pre-fix behaviour too — without `--host`, that request returned 200 with no auth header.
 - Pre-flight honesty: with the watcher script or `claude-local` missing, the launcher says **NOT armed** and names the missing file rather than reporting armed. Both cases previously printed "watcher armed" and started nothing.
+- Failed-swap recovery: with the relaunch never coming back, the pane is left open, the bar stays red naming the failure, and the log carries the recovery command. Previously the pane was closed 120s later and the explanation went only to a file.
 - Clean-install walkthrough in a throwaway `HOME`, following the Install section literally: profile detected, watcher armed and actually running, choice persisted and remembered, watcher exited with its pane, no key in the log
 - Startup pre-flight: a missing `~/glm-proxy`, a missing `config.yaml`, and a missing `litellm` binary each fail in under a second naming the cause. Previously all three waited 60s and then pointed at a log file that was never created.
 - Shared-port safety: a session that reused another's proxy declined to stop it and the proxy kept serving; the session that started it stopped it and cleaned up its pidfile; a stale pidfile naming a different pid produced a refusal rather than a wrong kill
