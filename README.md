@@ -42,6 +42,8 @@ Source: `litellm/__init__.py`, `use_chat_completions_url_for_anthropic_messages`
 | Claude Code | Installed **inside** the same environment as the proxy |
 | Python | 3.10+ with `litellm[proxy]` |
 | tmux | 2.1 or newer (failover only) |
+| `curl` | Proxy readiness check — hard dependency |
+| `ss` or `lsof` | Port allocation and proxy shutdown. `ss` (iproute2) on Linux, `lsof` on macOS; either is enough. |
 | NVIDIA API key | Free from [build.nvidia.com](https://build.nvidia.com), no card required |
 
 ---
@@ -139,10 +141,11 @@ That matters: if the port did not survive, the relaunch would allocate a differe
 **A bare `claude-local` still uses the shared port 4000** and is never stopped automatically — it has no owning session, and another terminal may be using it. Stop it by hand when you want the memory back:
 
 ```bash
-kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
+kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"   # Linux
+kill "$(lsof -nP -tiTCP:4000 -sTCP:LISTEN)"                              # macOS
 ```
 
-Kill by port rather than `pkill -f litellm`, which would also take down any unrelated LiteLLM instance.
+Kill by port rather than `pkill -f litellm`. That pattern would take down any unrelated LiteLLM instance — and, since proxies are now per session, every other session's proxy along with it.
 
 ### The proxy is loopback-only, deliberately
 

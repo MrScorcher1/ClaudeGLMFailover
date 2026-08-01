@@ -193,6 +193,32 @@ _cf_status() {
   LAST_STATUS="$1"
 }
 
+# Who is listening on a port. `ss` is iproute2 and does not exist on macOS,
+# which the README lists as supported — without the lsof fallback the proxy
+# would simply never be stopped there, leaking one per session with nothing
+# said about it.
+_cf_pid_on_port() {
+  local p="$1" pid=""
+  if command -v ss >/dev/null 2>&1; then
+    pid="$(ss -ltnp 2>/dev/null | grep ":$p " | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)"
+  fi
+  if [ -z "$pid" ] && command -v lsof >/dev/null 2>&1; then
+    pid="$(lsof -nP -tiTCP:"$p" -sTCP:LISTEN 2>/dev/null | head -1)"
+  fi
+  printf '%s' "$pid"
+}
+
+# /proc is Linux-only; `ps -p` works everywhere but costs a fork, so it is the
+# fallback rather than the default.
+_cf_cmdline_of() {
+  local pid="$1"
+  if [ -r "/proc/$pid/cmdline" ]; then
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null
+  else
+    ps -p "$pid" -o args= 2>/dev/null
+  fi
+}
+
 # Stop the proxy this session started. Safe precisely because the port was
 # allocated for this session alone -- but still verified to be a litellm before
 # killing, in case the port was recycled by something else in the meantime.
@@ -200,9 +226,9 @@ stop_session_proxy() {
   [ -n "$SESSION_PORT" ] || return 0
   [ "$SESSION_PORT" != "4000" ] || return 0     # never stop the shared default
   local pid cmdline
-  pid="$(ss -ltnp 2>/dev/null | grep ":$SESSION_PORT " | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)"
+  pid="$(_cf_pid_on_port "$SESSION_PORT")"
   [ -n "$pid" ] || return 0
-  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
+  cmdline="$(_cf_cmdline_of "$pid")"
   case "$cmdline" in
     *litellm*)
       log "stopping this session's proxy on :$SESSION_PORT (pid $pid)"

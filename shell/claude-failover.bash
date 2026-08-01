@@ -169,13 +169,32 @@ _cf_read_args() {
 _CF_PORT_LO="${CLAUDE_FAILOVER_PORT_LO:-4100}"
 _CF_PORT_HI="${CLAUDE_FAILOVER_PORT_HI:-4199}"
 
+# `ss` is iproute2 and does not exist on macOS; `lsof` does. Without the
+# fallback every port would look free there, and two concurrent sessions would
+# be handed the same one.
+_cf_port_busy() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | grep -q ":$p "
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1
+  else
+    return 1        # no way to tell; treat as free and let the proxy's own
+                    # readiness check report a clash
+  fi
+}
+
 _cf_free_port() {
+  if ! command -v ss >/dev/null 2>&1 && ! command -v lsof >/dev/null 2>&1; then
+    echo "claude-failover: neither 'ss' nor 'lsof' found — cannot check whether a port is free" >&2
+    echo "  install iproute2 or lsof, or two sessions may collide on one port" >&2
+  fi
   local span=$(( _CF_PORT_HI - _CF_PORT_LO + 1 ))
   local start=$(( _CF_PORT_LO + RANDOM % span ))
   local i p
   for (( i = 0; i < span; i++ )); do
     p=$(( _CF_PORT_LO + ( (start - _CF_PORT_LO) + i ) % span ))
-    ss -ltn 2>/dev/null | grep -q ":$p " || { printf '%s' "$p"; return 0; }
+    _cf_port_busy "$p" || { printf '%s' "$p"; return 0; }
   done
   return 1
 }
