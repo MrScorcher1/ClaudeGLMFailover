@@ -191,6 +191,7 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `IDLE_EXIT_SECONDS` | 120 | Quit if Claude Code stays gone this long (`0` = never) |
 | `WD_COOLDOWN_SECONDS` | 60 | Short throttle after a working-directory refusal |
 | `KEY_PROMPT_TIMEOUT_SECONDS` | 15 | Max wait for the one-time API-key approval prompt |
+| `CLOSE_PANE_ON_EXIT` | 1 | Close the pane when the watcher gives up on it (`0` = leave it) |
 | `FRESH_WINDOW_MINUTES` | 4× cooldown | Transcript freshness window for the pre-swap guard |
 | `EXPECT_CONFIG_DIR` | unset | Profile the guard checks. Unset disables the guard. |
 | `EXPECT_PANE_DIR` | unset | Directory the session started in |
@@ -211,6 +212,10 @@ Freshness is checked rather than reconstructing the transcript filename. Claude 
 The two throttles differ by cause: a profile mismatch can't self-correct, so it waits out the full cooldown; a changed working directory can, so it retries after `WD_COOLDOWN_SECONDS`. The freshness window is derived from the longest cooldown rather than set independently, so a twice-refused session can't fail freshness for reasons unrelated to the original cause.
 
 **A pane id is not an identity.** tmux hands out `%0`, `%1`, … again after a server restart, so "that id still exists" doesn't mean it's the same pane. The watcher pins the tmux server pid at startup and exits if it changes — otherwise a leftover watcher re-attaches to an unrelated new session and can act on it with stale expectations.
+
+**It tells you what it is doing.** The launcher prints the active profile, that the watcher is armed and where its log is, and on the way out whether the session ended or you merely detached. The watcher itself is silent by design — its output would scribble over the session — so without those lines the only evidence it exists is a log file you would have to know to read.
+
+**The pane closes once the watcher gives up on it**, so an empty tmux session does not linger. Only when the shell is idle: if an editor, a build, or any command is running there, closing the pane would destroy that work, so it is left open and the log says why.
 
 **The watcher exits when Claude Code does.** The pane deliberately outlives Claude Code — it runs a shell so the relaunch has somewhere to be typed — so pane death alone never fires on a normal `/exit`. Without an idle timeout the watcher would survive every clean exit, and a stale one blocks a new watcher on the same pane, leaving a later session silently unwatched.
 

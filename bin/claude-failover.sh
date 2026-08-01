@@ -34,6 +34,7 @@ COOLDOWN="${COOLDOWN_SECONDS:-900}"   # ignore detections for this long after a 
 IDLE_EXIT="${IDLE_EXIT_SECONDS:-120}" # quit if Claude Code stays gone this long (0 = never)
 WD_COOLDOWN="${WD_COOLDOWN_SECONDS:-60}" # short throttle for the self-correcting cd case
 KEY_PROMPT_TIMEOUT="${KEY_PROMPT_TIMEOUT_SECONDS:-15}" # max wait for the one-time API key prompt
+CLOSE_PANE="${CLOSE_PANE_ON_EXIT:-1}"  # close the pane when the watcher gives up on it (0 = leave it)
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
 
 # Freshness window for the pre-swap guard, in MINUTES, derived from the longest
@@ -155,6 +156,31 @@ wait_for_session() {
 
 _cf_realpath() {
   readlink -f -- "$1" 2>/dev/null || printf '%s' "$1"
+}
+
+# The pane deliberately outlives Claude Code so a swap has somewhere to type the
+# relaunch. Once this watcher gives up, that reason is gone and an empty tmux
+# session is just clutter — so close it.
+#
+# ONLY when the shell is sitting idle. After quitting Claude Code the user may
+# well be using that shell; if an editor, a build, or any command is running
+# there, closing the pane would destroy their work. In that case leave it and
+# say so.
+close_pane_if_idle() {
+  [ "$CLOSE_PANE" = "1" ] || return 0
+  local cmd
+  cmd="$(tmux display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null)"
+  case "$cmd" in
+    bash|zsh|sh|dash|fish|ksh)
+      log "closing pane $PANE — shell is idle"
+      tmux kill-pane -t "$PANE" 2>/dev/null
+      ;;
+    "")
+      : ;;   # pane already gone
+    *)
+      log "leaving pane $PANE open — '$cmd' is still running there"
+      ;;
+  esac
 }
 
 # Freshness, not name derivation. Deriving the project directory by replacing
@@ -347,6 +373,7 @@ while true; do
     IDLE=$((IDLE + POLL))
     if [ "$IDLE_EXIT" -gt 0 ] && [ "$IDLE" -ge "$IDLE_EXIT" ]; then
       log "Claude Code gone for ${IDLE}s — exiting"
+      close_pane_if_idle
       exit 0
     fi
   fi

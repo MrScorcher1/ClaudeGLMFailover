@@ -178,6 +178,10 @@ _cf_start_watcher() {
   EXPECT_PANE_DIR="$pane_dir" \
     nohup "$_CF_WATCHER" "$pane" >/dev/null 2>&1 &
   disown 2>/dev/null
+  # The watcher is silent by design — its output would scribble over the
+  # session. Say it is armed here, or the only evidence is a log file the user
+  # has to know exists.
+  echo "claude-failover: watcher armed on pane $pane — log: ${LOG_FILE:-$HOME/.claude-failover.log}"
 }
 
 claude-failover() {
@@ -269,7 +273,9 @@ claude-failover() {
     # Already inside tmux — we know our own pane from $TMUX_PANE.
     _cf_start_watcher "$TMUX_PANE" "$dir" "$extra"
     eval "$base" '"${passthru[@]}"'
-    return $?
+    local rc=$?
+    echo "claude-failover: Claude Code exited — watcher stops on its own shortly"
+    return $rc
   fi
 
   # Not in tmux. Create a detached session running an interactive SHELL, then
@@ -304,6 +310,16 @@ claude-failover() {
   tmux send-keys -t "$pane" "$base$quoted" Enter
   _cf_start_watcher "$pane" "$dir" "$extra"
   tmux attach -t "$session"
+
+  # attach returns either because the session ended or because the user
+  # detached. The watcher is silent, so report which one happened — otherwise
+  # the only way to know whether you are still protected is to read a log.
+  if tmux has-session -t "$session" 2>/dev/null; then
+    echo "claude-failover: detached from $session — watcher still running on pane $pane"
+    echo "  reattach with: tmux attach -t $session"
+  else
+    echo "claude-failover: session ended — watcher stopped"
+  fi
 }
 
 claude-personal-failover() {
