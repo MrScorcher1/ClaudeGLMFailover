@@ -192,6 +192,7 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `WD_COOLDOWN_SECONDS` | 60 | Short throttle after a working-directory refusal |
 | `KEY_PROMPT_TIMEOUT_SECONDS` | 15 | Max wait for the one-time API-key approval prompt |
 | `CLOSE_PANE_ON_EXIT` | 1 | Close the pane when the watcher gives up on it (`0` = leave it) |
+| `CLOSE_PANE_DELAY_SECONDS` | 3 | Pause before closing, so the stopped state is readable |
 | `FRESH_WINDOW_MINUTES` | 4× cooldown | Transcript freshness window for the pre-swap guard |
 | `EXPECT_CONFIG_DIR` | unset | Profile the guard checks. Unset disables the guard. |
 | `EXPECT_PANE_DIR` | unset | Directory the session started in |

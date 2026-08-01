@@ -35,6 +35,7 @@ IDLE_EXIT="${IDLE_EXIT_SECONDS:-120}" # quit if Claude Code stays gone this long
 WD_COOLDOWN="${WD_COOLDOWN_SECONDS:-60}" # short throttle for the self-correcting cd case
 KEY_PROMPT_TIMEOUT="${KEY_PROMPT_TIMEOUT_SECONDS:-15}" # max wait for the one-time API key prompt
 CLOSE_PANE="${CLOSE_PANE_ON_EXIT:-1}"  # close the pane when the watcher gives up on it (0 = leave it)
+CLOSE_PANE_DELAY="${CLOSE_PANE_DELAY_SECONDS:-3}" # let the "stopped" state be visible before the pane goes
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
 
 # Freshness window for the pre-swap guard, in MINUTES, derived from the longest
@@ -185,6 +186,12 @@ close_pane_if_idle() {
   case "$cmd" in
     bash|zsh|sh|dash|fish|ksh)
       log "closing pane $PANE — shell is idle"
+      # The caller has just turned the status bar red. Without a pause the pane
+      # dies in the same instant and the session vanishes with no visible
+      # explanation — the change has to last long enough to be read.
+      tmux display-message -t "$PANE" -d 2500 \
+        "claude-failover: watcher stopped — closing this pane" 2>/dev/null
+      sleep "$CLOSE_PANE_DELAY"
       tmux kill-pane -t "$PANE" 2>/dev/null
       ;;
     "")
