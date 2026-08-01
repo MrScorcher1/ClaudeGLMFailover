@@ -327,6 +327,7 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Shell isolation: no `ANTHROPIC_*` leakage
 - Proxy bind: `127.0.0.1:<port>` only, with the same request refused when sent to the machine's LAN address. Confirmed the pre-fix behaviour too — without `--host`, that request returned 200 with no auth header.
 - Pre-flight honesty: with the watcher script or `claude-local` missing, the launcher says **NOT armed** and names the missing file rather than reporting armed. Both cases previously printed "watcher armed" and started nothing.
+- Clean-install walkthrough in a throwaway `HOME`, following the Install section literally: profile detected, watcher armed and actually running, choice persisted and remembered, watcher exited with its pane, no key in the log
 - Startup pre-flight: a missing `~/glm-proxy`, a missing `config.yaml`, and a missing `litellm` binary each fail in under a second naming the cause. Previously all three waited 60s and then pointed at a log file that was never created.
 - Shared-port safety: a session that reused another's proxy declined to stop it and the proxy kept serving; the session that started it stopped it and cleaned up its pidfile; a stale pidfile naming a different pid produced a refusal rather than a wrong kill
 - macOS code paths exercised on Linux behind a `PATH` shim hiding `ss`: port-busy detection, free-port selection, and a real proxy identified and stopped through `lsof`

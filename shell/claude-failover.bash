@@ -236,12 +236,17 @@ _cf_start_watcher() {
   # The port must be carried into the swap exactly like the config dir. If it
   # were not, the relaunch would allocate a different one, start a SECOND proxy
   # and orphan this session's.
-  RELAUNCH_CMD="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") CLAUDE_LOCAL_PORT=$port $localbin --continue${extra}" \
-  EXPECT_CONFIG_DIR="$dir" \
-  EXPECT_PANE_DIR="$pane_dir" \
-  SESSION_PORT="$port" \
-    nohup "$_CF_WATCHER" "$pane" >/dev/null 2>&1 &
-  disown 2>/dev/null
+  # Launched inside a subshell so bash's job control stays quiet. Backgrounding
+  # directly from an interactive shell prints "[1] 12345" into the user's
+  # terminal, immediately below the "armed" line, where it reads as part of the
+  # tool's output rather than as shell noise.
+  (
+    RELAUNCH_CMD="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") CLAUDE_LOCAL_PORT=$port $localbin --continue${extra}" \
+    EXPECT_CONFIG_DIR="$dir" \
+    EXPECT_PANE_DIR="$pane_dir" \
+    SESSION_PORT="$port" \
+      nohup "$_CF_WATCHER" "$pane" >/dev/null 2>&1 &
+  )
   # The watcher is silent by design — its output would scribble over the
   # session. Say it is armed here, or the only evidence is a log file the user
   # has to know exists.
