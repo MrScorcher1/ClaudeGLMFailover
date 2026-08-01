@@ -296,7 +296,11 @@ A recent file must appear. If it is empty but `~/.claude/projects/` has a new fi
 ### E — Watcher was already running from before the update
 **Symptom:** Gate 2 passes for new sessions but an existing session still swaps wrongly.
 **Cause:** A running watcher holds the `RELAUNCH_CMD` from when it started.
-**Fix:** `pkill -f claude-failover`, then start a fresh session.
+**Fix:** Stop the watcher on that pane specifically, then start a fresh session. A bare `pkill -f claude-failover` matches every watcher and would unprotect any other session you have running:
+
+```bash
+pkill -f "claude-failover\.sh %3\$"     # substitute the pane id
+```
 
 ---
 

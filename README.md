@@ -56,11 +56,16 @@ Add to `~/.bashrc`. **Place it above any non-interactive guard** — the stock U
 export NVIDIA_API_KEY="nvapi-..."
 ```
 
-Avoid putting the key on a command line. This writes it without echoing or entering shell history:
+Avoid putting the key on a command line — `/proc/<pid>/cmdline` is world-readable, so a key passed as an argument to `sed` or `echo` is visible to `ps` for as long as that process lives. `read` and `printf` are both shell builtins, so this version never creates a process that holds the key:
 
 ```bash
-read -rs -p "Key: " K; sed -i "1i export NVIDIA_API_KEY=\"$K\"" ~/.bashrc; unset K
+read -rs -p "Key: " K
+{ printf 'export NVIDIA_API_KEY="%s"\n' "$K"; cat ~/.bashrc; } > ~/.bashrc.new \
+  && mv ~/.bashrc.new ~/.bashrc
+unset K
 ```
+
+It also does not echo the key or leave it in shell history.
 
 ### 2. LiteLLM
 

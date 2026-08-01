@@ -355,8 +355,10 @@ All five model values use the `model_name` from Phase 2 (`glm-5.2`), **not** the
 **Agent's final action.** Before reporting and handing off, stop the verification proxy started in Phase 3, so the human's test exercises the launcher's own cold-start path rather than a proxy that is already warm:
 
 ```bash
-pkill -f "litellm --config" || true
+kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)" 2>/dev/null || true
 ```
+
+(Scoped to the verification port. A broad `pkill -f litellm` would now also stop any per-session proxy on 4100-4199.)
 
 That is the agent's last step. Everything below is the human's.
 
@@ -440,7 +442,13 @@ If still 404, substitute a purpose-built adapter — `zhangrr/claude-nvidia-prox
 
 #### L — Launcher reports "already running" but requests fail
 **Cause:** A stale or wedged LiteLLM process is holding the port and answering `/v1/models` while otherwise broken.
-**Fix:** `pkill -f "litellm --config"` then re-run `claude-local` to get a clean start.
+**Fix:** Kill only the process holding that port, then re-run `claude-local`:
+
+```bash
+kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
+```
+
+Do **not** use `pkill -f "litellm --config"` here. Since per-session proxies were introduced, several LiteLLM instances may be running at once on ports 4100-4199, and that pattern would take down every other session's proxy along with the wedged one.
 
 #### M — `pip install` fails with "externally-managed-environment"
 **Symptom:** Phase 1 aborts before LiteLLM installs.
