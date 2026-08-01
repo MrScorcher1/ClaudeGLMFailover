@@ -5,15 +5,19 @@ PROXY_DIR="$HOME/glm-proxy"
 PORT=4000
 MODEL="glm-5.2"
 LOG="$PROXY_DIR/litellm.log"
-# Absolute path: litellm is installed as a uv tool, not a plain pip install.
-LITELLM="$HOME/.local/bin/litellm"
 
-# Port 4000 previously belonged to litellm.service (an Ollama-backed proxy,
-# ~/litellm_config.yaml). That unit was stopped and disabled; if it ever comes
-# back it will fight this script for the port -- check with:
-#   systemctl is-enabled litellm.service   # expect: disabled
-#
-# To clear a wedged proxy, kill it by port rather than by name:
+# Absolute path so this does not depend on the calling shell's PATH. Point it
+# at a venv or pipx binary if you installed litellm that way.
+LITELLM="${LITELLM_BIN:-$HOME/.local/bin/litellm}"
+
+# Config dir used ONLY when none is inherited — that is, when you run
+# claude-local directly. claude-failover always passes one in, and that value
+# wins. On a stock single-profile install set this to "$HOME/.claude".
+DEFAULT_CONFIG_DIR="${CLAUDE_LOCAL_CONFIG_DIR:-$HOME/.claude-personal}"
+
+# If the port is already taken by something unrelated, change PORT here and in
+# your proxy config. To clear a wedged proxy, kill it by port rather than by
+# name, so you cannot take down an unrelated litellm instance:
 #   kill "$(ss -ltnp 2>/dev/null | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
 
 # 1. Refuse to start without the upstream key.
@@ -52,12 +56,8 @@ else
 fi
 
 # 4. Scoped environment. These exist only inside this script's process --
-#    they are never exported into your shell, so `claude-personal` and
-#    `claude-work` are unaffected.
-#
-#    Run under the personal profile by default, matching the `claude-personal`
-#    alias. Without this, `exec claude` would fall back to a bare ~/.claude
-#    profile with none of your settings or plugins.
+#    they are never exported into your shell, so your normal launcher is
+#    unaffected.
 #
 #    MUST respect an inherited value. claude-failover invokes this as
 #      CLAUDE_CONFIG_DIR=<profile> claude-local --continue
@@ -65,7 +65,7 @@ fi
 #    assignment here silently overrode that and resumed the wrong
 #    conversation — the exact failure the failover guard exists to prevent,
 #    one layer below where the guard can see it.
-export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-personal}"
+export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:$PORT"
 export ANTHROPIC_API_KEY="dummy-not-used"

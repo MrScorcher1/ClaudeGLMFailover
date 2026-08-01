@@ -1,3 +1,10 @@
+> **Historical — superseded.** This spec introduced `claude-personal-failover`,
+> whose base command and config dir were hardcoded to one machine. It was
+> replaced by explicit profile selection; see `spec-explicit-profiles.md` for
+> the current design. `claude-personal-failover` still exists only as a
+> deprecation shim that forwards to `claude-failover`.
+> Retained for the reasoning behind the watcher edits it describes.
+
 # UPDATE — apply to an existing GLM-5.2 / claude-local setup
 
 This is a change-set, not a fresh install. It assumes a working setup and modifies it in place.

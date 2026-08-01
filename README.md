@@ -2,12 +2,13 @@
 
 Run Claude Code against **GLM-5.2** on NVIDIA's free hosted catalog, and automatically fail over to it — with the conversation intact — when your Claude subscription hits its usage limit.
 
-Two independent pieces:
+Three pieces:
 
 1. **`claude-local`** — a launcher that points Claude Code at GLM-5.2 through a LiteLLM translation proxy. Your normal `claude` session is untouched.
 2. **`claude-failover.sh`** — a tmux watcher that detects the usage-limit notice and hot-swaps the live session onto GLM via `--continue`.
+3. **`claude-failover`** — a shell function that starts a session and its watcher together, against an explicitly chosen Claude Code profile.
 
-Plus **`claude-failover`**, a shell function that starts both with one command, against an explicitly chosen Claude Code profile.
+Part 1 works on its own. Parts 2 and 3 are the failover layer on top of it.
 
 ---
 
@@ -81,6 +82,8 @@ chmod +x ~/.local/bin/claude-local ~/claude-failover.sh
 
 Ensure `~/.local/bin` is on `PATH`.
 
+**One value to check in `bin/claude-local`.** `DEFAULT_CONFIG_DIR` is the config dir used when you run `claude-local` directly, and it ships set to `$HOME/.claude-personal` — the author's profile. On a stock single-profile install change it to `$HOME/.claude`, or export `CLAUDE_LOCAL_CONFIG_DIR`. This only affects direct runs: `claude-failover` always passes a config dir in, and an inherited value always wins.
+
 ### 4. One-command launcher (optional)
 
 Append `shell/claude-failover.bash` to `~/.bashrc`, then open a new terminal:
@@ -103,6 +106,8 @@ claude-failover --profile        # print the saved profile and exit
 ```
 
 Your normal launcher is unaffected. `claude-local` sets its environment inside its own process and `exec`s, so nothing leaks into your shell — verify with `env | grep ANTHROPIC`, which should return nothing.
+
+`claude-personal-failover` still exists as a deprecation shim that prints a notice and forwards to `claude-failover`. It will be removed.
 
 When the limit fires, the watcher exits the session and relaunches it with `--continue` on GLM. Going back is manual and deliberate:
 
@@ -167,7 +172,8 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `RELAUNCH_CMD` | `claude-local --continue` | What gets typed to resume. Carries `CLAUDE_CONFIG_DIR`. |
+| `RELAUNCH_CMD` | `~/.local/bin/claude-local --continue` | What gets typed to resume. `claude-failover` sets this and prefixes `CLAUDE_CONFIG_DIR`. |
+| `CLAUDE_LOCAL_BIN` | `~/.local/bin/claude-local` | Path to the launcher used in the relaunch |
 | `POLL_SECONDS` | 5 | Pane check interval |
 | `SCAN_LINES` | 30 | How much pane tail to read |
 | `SETTLE_SECONDS` | 4 | Pause after `/exit` |
@@ -224,6 +230,10 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - Anthropic-shaped responses through the proxy, including streaming + tool use with `stop_reason: tool_use`
 - Multi-turn agentic tool loop under Claude Code
 - Full swap: detection to a running GLM session in ~9 seconds, with the model answering from transferred conversation history
+- Swap under a **non-default** profile, resuming that profile's conversation — the case that exposed `claude-local` overwriting an inherited `CLAUDE_CONFIG_DIR`
+- Both guard paths: refusal on a profile with no recent transcript, and on a changed working directory, each leaving the session running
+- Cause-based throttling: a working-directory refusal retried after 61s, a profile mismatch held for the full cooldown
+- The one-time API-key prompt answered automatically, and *not* answered when the same text appears in replayed history
 - Shell isolation: no `ANTHROPIC_*` leakage
 
 **Not verifiable in advance:** whether your real usage-limit message matches `PATTERN`. Until you hit a genuine limit and confirm the swap fired, treat the failover half as provisional.

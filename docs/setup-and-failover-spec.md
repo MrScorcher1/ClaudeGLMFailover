@@ -1,3 +1,10 @@
+> **Historical — superseded in part.** This is the original build spec (Parts 1-3)
+> and remains accurate for the proxy, the launcher, and how the gates were run.
+> **Part 3's inline watcher script is out of date** — the shipped watcher is
+> `bin/claude-failover.sh`, which since gained a pre-swap guard, an idle exit,
+> and API-key prompt handling. Copy from `bin/`, never from this document.
+> Profile handling described here is superseded by `spec-explicit-profiles.md`.
+
 # GLM-5.2 on Claude Code — Complete Setup and Failover
 
 One document covering both halves of this build:

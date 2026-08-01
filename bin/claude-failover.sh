@@ -11,15 +11,13 @@
 # Find your pane id with:
 #   tmux list-panes -a -F '#{pane_id} #{pane_current_command} #{pane_current_path}'
 #
-# LOCAL NOTES (this machine):
-#   * Start the watched session with `claude-personal`, NOT plain `claude`.
-#     Plain `claude` is aliased to a reminder message here and starts nothing.
-#   * `claude-personal` and `claude-local` both use CLAUDE_CONFIG_DIR=
-#     $HOME/.claude-personal, so they share a session store and --continue
-#     resolves correctly across the swap. A session started with `claude-work`
-#     will NOT be found by claude-local.
-#   * Verified on tmux 3.6: pane_current_command reports "claude" for the
-#     native-installer binary, so foreground_is_claude() works unmodified.
+# Normally started for you by the `claude-failover` shell function, which also
+# sets RELAUNCH_CMD and the EXPECT_* guard variables so the swap resumes under
+# the same profile the session ran in. Starting it by hand leaves the pre-swap
+# guard disabled — see EXPECT_CONFIG_DIR below.
+#
+# Verified on tmux 3.6: pane_current_command reports "claude" for the
+# native-installer binary, so foreground_is_claude() works unmodified.
 
 # Deliberately no `set -e`: this is a long-running monitor and must survive
 # transient tmux/grep failures rather than dying on them.
@@ -51,20 +49,15 @@ FRESH_WINDOW="${FRESH_WINDOW_MINUTES:-$(( (COOLDOWN * 4 + 59) / 60 ))}"
 EXPECT_CONFIG_DIR="${EXPECT_CONFIG_DIR:-}"
 EXPECT_PANE_DIR="${EXPECT_PANE_DIR:-}"
 
-# Absolute path rather than a bare name (Part 2, Failure Mode D). claude-local
-# is a real executable on PATH here, so the bare name would resolve — but the
-# absolute path removes any dependence on the pane shell's PATH.
-CLAUDE_LOCAL="$HOME/.local/bin/claude-local"
+# Absolute path rather than a bare name: the relaunch is typed into the pane's
+# shell, so this must not depend on that shell's PATH.
+CLAUDE_LOCAL="${CLAUDE_LOCAL_BIN:-$HOME/.local/bin/claude-local}"
 
-# What gets typed into the pane to resume on GLM. Override this if your Claude
-# Code session uses a non-default CLAUDE_CONFIG_DIR — otherwise --continue looks
-# in ~/.claude, finds no matching transcript, and opens an EMPTY session.
-#   e.g. RELAUNCH_CMD='CLAUDE_CONFIG_DIR=$HOME/.claude-personal claude-local --continue'
-#
-# NOTE (this machine): claude-local already exports
-# CLAUDE_CONFIG_DIR=$HOME/.claude-personal internally, so the bare default is
-# not actually broken here. Setting it explicitly removes the dependence on
-# that launcher internal, which is the point of the override.
+# What gets typed into the pane to resume on GLM. claude-failover sets this and
+# includes the config dir, which is what makes --continue find the right
+# transcript. The bare default below is only reached by a hand-started watcher,
+# and relies on claude-local's own default config dir.
+#   e.g. RELAUNCH_CMD='CLAUDE_CONFIG_DIR=$HOME/.claude-work claude-local --continue'
 RELAUNCH_CMD="${RELAUNCH_CMD:-$CLAUDE_LOCAL --continue}"
 
 LAST_SWAP=0
