@@ -377,14 +377,7 @@ claude-failover() {
   local pane
   pane="$(tmux list-panes -t "$session" -F '#{pane_id}' | head -1)"
 
-  # Show the failover state in the status bar of the session we created. The
-  # startup lines scroll away the instant tmux attaches, so without this there
-  # is nothing on screen telling you the watcher is armed. Scoped with -t to
-  # this session only, so a user's own tmux config is untouched and the setting
-  # dies with the session.
-  tmux set-option -t "$session" status-style "bg=green,fg=black" 2>/dev/null
-  tmux set-option -t "$session" status-right " failover: armed   %H:%M " 2>/dev/null
-  tmux set-option -t "$session" status-right-length 40 2>/dev/null
+  tmux set-option -t "$session" status-right-length 48 2>/dev/null
 
   # Quote each argument individually. A bare "$*" mangles anything containing
   # spaces, e.g. --append-system-prompt "be brief".
@@ -394,7 +387,25 @@ claude-failover() {
   done
 
   tmux send-keys -t "$pane" "$base$quoted" Enter
-  _cf_start_watcher "$pane" "$dir" "$extra" "$port"
+
+  # Show the failover state in the status bar of the session we created. The
+  # startup lines scroll away the instant tmux attaches, so without this there
+  # is nothing on screen telling you the watcher is armed. Scoped with -t to
+  # this session only, so a user's own tmux config is untouched and the setting
+  # dies with the session.
+  #
+  # Set AFTER the watcher, and from its result. Setting it first meant that on
+  # this path a watcher that failed to start left a green "armed" bar saying
+  # the opposite -- and the stderr warning is invisible here, because tmux
+  # attach paints over the terminal the instant it is printed.
+  if _cf_start_watcher "$pane" "$dir" "$extra" "$port"; then
+    tmux set-option -t "$session" status-style "bg=green,fg=black" 2>/dev/null
+    tmux set-option -t "$session" status-right " failover: armed   %H:%M " 2>/dev/null
+  else
+    tmux set-option -t "$session" status-style "bg=red,fg=white" 2>/dev/null
+    tmux set-option -t "$session" status-right " failover: NOT armed   %H:%M " 2>/dev/null
+  fi
+
   tmux attach -t "$session"
 
   # attach returns either because the session ended or because the user
