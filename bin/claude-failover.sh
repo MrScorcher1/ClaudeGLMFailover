@@ -235,15 +235,25 @@ _cf_answer_key_prompt() {
   # exits early either way: on the prompt, or once the normal UI is up.
   while [ "$waited" -lt "$KEY_PROMPT_TIMEOUT" ]; do
     tail_text="$(pane_full)"
-    if grep -q 'Detected a custom API key' <<< "$tail_text"; then
+
+    # Normal input bar is showing, so no modal is up. Checked FIRST and on its
+    # own: --continue replays the transcript, so a conversation that merely
+    # discussed this prompt can put its text back on screen. In that case the
+    # input bar is also present, and typing "1" would send a chat message.
+    # A real modal hides the input bar, so these are mutually exclusive.
+    if grep -q 'for shortcuts' <<< "$tail_text"; then
+      return 0
+    fi
+
+    # Require the modal's footer as well as its title. Both must be present,
+    # so quoted prose about the prompt cannot trigger it on its own.
+    if grep -q 'Detected a custom API key' <<< "$tail_text" && \
+       grep -q 'Enter to confirm' <<< "$tail_text"; then
       log "answering one-time API key approval for this profile (selecting Yes)"
       tmux send-keys -t "$PANE" '1'
       sleep 1
       tmux send-keys -t "$PANE" Enter
       return 0
-    fi
-    if grep -q 'for shortcuts' <<< "$tail_text"; then
-      return 0        # session is up and no prompt appeared
     fi
     sleep 2
     waited=$((waited + 2))
