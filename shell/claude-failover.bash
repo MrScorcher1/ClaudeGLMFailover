@@ -85,6 +85,9 @@ _cf_resolve_profile() {
   esac
 }
 
+# Short label for the $HOME/.claude-X convention; the full path otherwise.
+# Deliberately NOT the basename for unconventional paths: the label also names
+# the per-profile args file, and two directories can share a basename.
 _cf_label_for() {
   local d="${1%/}"
   case "$d" in
@@ -92,6 +95,17 @@ _cf_label_for() {
     "$HOME/.claude-"*) echo "${d#"$HOME"/.claude-}" ;;
     *)                 echo "$d" ;;
   esac
+}
+
+# Avoids printing "profile '/long/path' (/long/path)" when the label IS the path.
+_cf_print_profile() {
+  local dir="$1" label
+  label="$(_cf_label_for "$dir")"
+  if [ "$label" = "$dir" ]; then
+    printf "claude-failover: profile %s\n" "$dir"
+  else
+    printf "claude-failover: profile '%s' (%s)\n" "$label" "$dir"
+  fi
 }
 
 # Atomic: temp file plus mv, so an interrupted write cannot leave a truncated
@@ -191,7 +205,7 @@ claude-failover() {
   if [ "$query_only" -eq 1 ]; then
     local saved
     if saved="$(_cf_load_profile)" && [ -n "$saved" ]; then
-      printf "claude-failover: profile '%s' (%s)\n" "$(_cf_label_for "$saved")" "$saved"
+      _cf_print_profile "$saved"
     else
       echo "claude-failover: no profile saved"
       echo "  set one with: claude-failover --profile <name|/abs/path>"
@@ -240,7 +254,7 @@ claude-failover() {
 
   label="$(_cf_label_for "$dir")"
   extra="$(_cf_read_args "$label")" || return 1
-  printf "claude-failover: profile '%s' (%s)\n" "$label" "$dir"
+  _cf_print_profile "$dir"
 
   base="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") command claude${extra}"
 

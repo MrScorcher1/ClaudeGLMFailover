@@ -133,6 +133,14 @@ Claude Code stores transcripts under `CLAUDE_CONFIG_DIR`. If the failover resume
 
 Names may contain only letters, digits, `.`, `_`, `-`. A leading `-` is rejected so a mistyped flag can't be read as a profile name.
 
+**The short name is sugar for one common layout; the absolute path is the general form.** If your profiles are `~/.claude_work`, `~/claude-profiles/team`, or `/opt/shared/cfg`, name the path once:
+
+```bash
+claude-failover --profile /opt/shared/cfg
+```
+
+The resolved absolute path is what gets saved, so bare `claude-failover` uses it from then on — you type it once, not every time. There is deliberately no registry and no directory scanning: a lookup table would need maintaining, and scanning would mean guessing, which is the failure this design exists to remove. When a short name resolves to nothing, the error names the resolved path, so the convention is discoverable from the failure.
+
 The choice persists to `${XDG_CONFIG_HOME:-~/.config}/claude-failover/profile` and every launch prints which profile is active.
 
 ### The classifier
