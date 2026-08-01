@@ -207,9 +207,13 @@ claude-failover() {
     if saved="$(_cf_load_profile)" && [ -n "$saved" ]; then
       _cf_print_profile "$saved"
     else
-      # Name what a bare run would actually use, not just "nothing saved" —
-      # the effective default is the useful answer.
-      echo "claude-failover: no profile saved — a bare run would use $HOME/.claude ($(_cf_classify "$HOME/.claude"))"
+      # Say what is wrong in plain terms. Classifier names (USED/EMPTY/...) are
+      # internal vocabulary and do not belong in user-facing output.
+      if [ "$(_cf_classify "$HOME/.claude")" = "USED" ]; then
+        echo "claude-failover: no profile set — will use $HOME/.claude"
+      else
+        echo "claude-failover: no profile set, and nothing usable found at $HOME/.claude"
+      fi
       echo "  set one with: claude-failover --profile <name|/abs/path>"
     fi
     return 0
@@ -228,21 +232,22 @@ claude-failover() {
   case "$class" in
     USED) ;;
     CONFIGURED)
-      echo "claude-failover: '$dir' has no sessions yet." >&2
-      echo "  failover cannot fire until a transcript exists there." >&2 ;;
+      echo "claude-failover: no past sessions at $dir yet." >&2
+      echo "  failover cannot kick in until you have used this profile at least once." >&2 ;;
     EMPTY|MISSING)
       if [ "$force" -eq 1 ]; then
-        echo "claude-failover: WARNING — --force overriding $class for $dir" >&2
+        echo "claude-failover: WARNING — using $dir anyway because --force was given" >&2
       else
-        echo "claude-failover: refusing to launch — $dir is $class" >&2
         if [ "$class" = "MISSING" ]; then
-          echo "  that path does not exist (a saved profile can go stale)" >&2
+          echo "claude-failover: no such directory: $dir" >&2
+          echo "  if you saved this profile earlier, it has since moved or been deleted" >&2
         else
-          echo "  no sessions and no settings.json/commands/agents/plugins there," >&2
-          echo "  so it does not look like a Claude Code config dir" >&2
+          echo "claude-failover: nothing usable found at $dir" >&2
+          echo "  no past sessions and no settings there, so it does not look like" >&2
+          echo "  a Claude Code profile" >&2
         fi
         echo "  set one with: claude-failover --profile <name|/abs/path>" >&2
-        echo "  or override with: --force" >&2
+        echo "  or use it anyway with: --force" >&2
         return 1
       fi ;;
   esac
