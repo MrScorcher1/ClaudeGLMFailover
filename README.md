@@ -237,7 +237,7 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `IDLE_EXIT_SECONDS` | 120 | Quit if Claude Code stays gone this long (`0` = never) |
 | `WD_COOLDOWN_SECONDS` | 60 | Short throttle after a working-directory refusal |
 | `KEY_PROMPT_TIMEOUT_SECONDS` | 15 | Max wait for the one-time API-key approval prompt |
-| `CLOSE_PANE_ON_EXIT` | 1 | Close the pane when the watcher gives up on it (`0` = leave it) |
+| `CLOSE_PANE_ON_EXIT` | 1 | Close the pane when the watcher gives up on it, in `cf-*` sessions only (`0` = never) |
 | `CLOSE_PANE_DELAY_SECONDS` | 3 | Pause before closing, so the stopped state is readable |
 | `FINAL_WARN_SECONDS` | 10 | Countdown turns from yellow to red for the last this many seconds |
 | `FRESH_WINDOW_MINUTES` | 4× cooldown | Transcript freshness window for the pre-swap guard |
@@ -283,7 +283,13 @@ The whole bar carries the colour, not just its right-hand segment, and the count
 
 The countdown starts the moment Claude Code exits, so the idle window is visible rather than a silent wait, and it returns to green if you start Claude again in that pane before it expires. It is set with `-t <session>`, so it applies only to sessions this tool created and dies with them — if you run `claude-failover` inside your own tmux session, your status bar is left alone.
 
-**The pane closes once the watcher gives up on it**, so an empty tmux session does not linger. Only when the shell is idle: if an editor, a build, or any command is running there, closing the pane would destroy that work, so it is left open and the log says why.
+**The pane closes once the watcher gives up on it**, so an empty tmux session does not linger. Three conditions, all required:
+
+- **The session is one this tool created** (`cf-*`). Run `claude-failover` inside your own tmux session and the watcher is handed one of *your* panes; closing it would take the window with it if it were the last one. Same rule the status bar follows.
+- **The shell is idle.** If an editor, a build, or any command is running there, closing the pane would destroy that work.
+- **The swap did not fail.** A failed swap leaves the session down, making that pane the only place to see what happened and run `claude --continue`.
+
+In every other case the pane is left open and the log says which condition stopped it.
 
 **The watcher exits when Claude Code does.** The pane deliberately outlives Claude Code — it runs a shell so the relaunch has somewhere to be typed — so pane death alone never fires on a normal `/exit`. Without an idle timeout the watcher would survive every clean exit, and a stale one blocks a new watcher on the same pane, leaving a later session silently unwatched.
 
