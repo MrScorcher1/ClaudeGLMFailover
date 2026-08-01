@@ -158,6 +158,18 @@ _cf_realpath() {
   readlink -f -- "$1" 2>/dev/null || printf '%s' "$1"
 }
 
+# Reflect failover state in the status bar, so it is visible for the whole
+# session rather than only in a log. Restricted to sessions claude-failover
+# created (cf-*): if the user ran this inside their own tmux session, their
+# status bar is theirs and we leave it alone.
+_cf_status() {
+  local sess
+  sess="$(tmux display-message -p -t "$PANE" '#{session_name}' 2>/dev/null)"
+  case "$sess" in
+    cf-*) tmux set-option -t "$sess" status-right "$1" 2>/dev/null ;;
+  esac
+}
+
 # The pane deliberately outlives Claude Code so a swap has somewhere to type the
 # relaunch. Once this watcher gives up, that reason is gone and an empty tmux
 # session is just clutter — so close it.
@@ -331,6 +343,7 @@ swap_to_glm() {
   if wait_for_session; then
     _cf_answer_key_prompt
     LAST_SWAP="$(date +%s)"
+    _cf_status "#[fg=black,bg=colour208] failover: on GLM-5.2 #[default] %H:%M "
     log "relaunched via claude-local --continue — now on GLM-5.2"
     log "when your limit resets, exit and resume with your normal launcher + --continue"
     return 0
@@ -352,7 +365,7 @@ else
 fi
 log "logging to $LOG"
 
-trap 'log "monitor stopped"; exit 0' INT TERM
+trap '_cf_status "#[fg=black,bg=red] failover: off #[default] %H:%M "; log "monitor stopped"; exit 0' INT TERM
 
 IDLE=0
 
@@ -373,6 +386,7 @@ while true; do
     IDLE=$((IDLE + POLL))
     if [ "$IDLE_EXIT" -gt 0 ] && [ "$IDLE" -ge "$IDLE_EXIT" ]; then
       log "Claude Code gone for ${IDLE}s — exiting"
+      _cf_status "#[fg=black,bg=red] failover: off #[default] %H:%M "
       close_pane_if_idle
       exit 0
     fi

@@ -300,6 +300,15 @@ claude-failover() {
   local pane
   pane="$(tmux list-panes -t "$session" -F '#{pane_id}' | head -1)"
 
+  # Show the failover state in the status bar of the session we created. The
+  # startup lines scroll away the instant tmux attaches, so without this there
+  # is nothing on screen telling you the watcher is armed. Scoped with -t to
+  # this session only, so a user's own tmux config is untouched and the setting
+  # dies with the session.
+  tmux set-option -t "$session" status-right \
+    "#[fg=black,bg=green] failover: armed #[default] %H:%M " 2>/dev/null
+  tmux set-option -t "$session" status-right-length 40 2>/dev/null
+
   # Quote each argument individually. A bare "$*" mangles anything containing
   # spaces, e.g. --append-system-prompt "be brief".
   local quoted="" arg

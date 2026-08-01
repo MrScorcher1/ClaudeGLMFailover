@@ -215,6 +215,8 @@ The two throttles differ by cause: a profile mismatch can't self-correct, so it 
 
 **It tells you what it is doing.** The launcher prints the active profile, that the watcher is armed and where its log is, and on the way out whether the session ended or you merely detached. The watcher itself is silent by design — its output would scribble over the session — so without those lines the only evidence it exists is a log file you would have to know to read.
 
+Those printed lines scroll away the moment tmux attaches, so the state also lives in the status bar of the session `claude-failover` creates: a green **failover: armed**, turning orange on a swap to GLM and red when the watcher stops. It is set with `-t <session>`, so it applies only to sessions this tool created and dies with them — if you run `claude-failover` inside your own tmux session, your status bar is left alone.
+
 **The pane closes once the watcher gives up on it**, so an empty tmux session does not linger. Only when the shell is idle: if an editor, a build, or any command is running there, closing the pane would destroy that work, so it is left open and the log says why.
 
 **The watcher exits when Claude Code does.** The pane deliberately outlives Claude Code — it runs a shell so the relaunch has somewhere to be typed — so pane death alone never fires on a normal `/exit`. Without an idle timeout the watcher would survive every clean exit, and a stale one blocks a new watcher on the same pane, leaving a later session silently unwatched.
