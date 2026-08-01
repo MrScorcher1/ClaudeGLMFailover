@@ -162,8 +162,26 @@ _cf_read_args() {
   printf '%s' "$out"
 }
 
+# Allocate a port for this session's proxy. Scanning starts at a random offset
+# so two sessions launched at the same moment are unlikely to pick the same
+# port; if they do, the loser's readiness check fails and claude-local reports
+# it rather than silently sharing.
+_CF_PORT_LO="${CLAUDE_FAILOVER_PORT_LO:-4100}"
+_CF_PORT_HI="${CLAUDE_FAILOVER_PORT_HI:-4199}"
+
+_cf_free_port() {
+  local span=$(( _CF_PORT_HI - _CF_PORT_LO + 1 ))
+  local start=$(( _CF_PORT_LO + RANDOM % span ))
+  local i p
+  for (( i = 0; i < span; i++ )); do
+    p=$(( _CF_PORT_LO + ( (start - _CF_PORT_LO) + i ) % span ))
+    ss -ltn 2>/dev/null | grep -q ":$p " || { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
+
 _cf_start_watcher() {
-  local pane="$1" dir="$2" extra="$3" pane_dir
+  local pane="$1" dir="$2" extra="$3" port="$4" pane_dir
   # Never run two watchers on the same pane. The trailing $ anchors the match:
   # without it, pane "%3" also matches a watcher running on "%30".
   if pgrep -f "claude-failover\.sh ${pane}\$" >/dev/null 2>&1; then
@@ -173,15 +191,19 @@ _cf_start_watcher() {
   # RELAUNCH_CMD carries the config dir and any per-profile flags into the
   # swap. EXPECT_* let the watcher refuse a swap that would resume the wrong
   # conversation. All three must agree with what launched the session.
-  RELAUNCH_CMD="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") $_CF_LOCAL --continue${extra}" \
+  # The port must be carried into the swap exactly like the config dir. If it
+  # were not, the relaunch would allocate a different one, start a SECOND proxy
+  # and orphan this session's.
+  RELAUNCH_CMD="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") CLAUDE_LOCAL_PORT=$port $_CF_LOCAL --continue${extra}" \
   EXPECT_CONFIG_DIR="$dir" \
   EXPECT_PANE_DIR="$pane_dir" \
+  SESSION_PORT="$port" \
     nohup "$_CF_WATCHER" "$pane" >/dev/null 2>&1 &
   disown 2>/dev/null
   # The watcher is silent by design — its output would scribble over the
   # session. Say it is armed here, or the only evidence is a log file the user
   # has to know exists.
-  echo "claude-failover: watcher armed on pane $pane — log: ${LOG_FILE:-$HOME/.claude-failover.log}"
+  echo "claude-failover: watcher armed on pane $pane, proxy port $port — log: ${LOG_FILE:-$HOME/.claude-failover.log}"
 }
 
 claude-failover() {
@@ -267,11 +289,19 @@ claude-failover() {
   extra="$(_cf_read_args "$label")" || return 1
   _cf_print_profile "$dir"
 
+  # One proxy per session. Allocated here so both the in-tmux and detached
+  # branches use the same value, and so it is known before anything launches.
+  local port
+  if ! port="$(_cf_free_port)"; then
+    echo "claude-failover: no free port in ${_CF_PORT_LO}-${_CF_PORT_HI}; falling back to the shared 4000" >&2
+    port=4000
+  fi
+
   base="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") command claude${extra}"
 
   if [ -n "${TMUX:-}" ]; then
     # Already inside tmux — we know our own pane from $TMUX_PANE.
-    _cf_start_watcher "$TMUX_PANE" "$dir" "$extra"
+    _cf_start_watcher "$TMUX_PANE" "$dir" "$extra" "$port"
     eval "$base" '"${passthru[@]}"'
     local rc=$?
     echo "claude-failover: Claude Code exited — watcher stops on its own shortly"
@@ -317,7 +347,7 @@ claude-failover() {
   done
 
   tmux send-keys -t "$pane" "$base$quoted" Enter
-  _cf_start_watcher "$pane" "$dir" "$extra"
+  _cf_start_watcher "$pane" "$dir" "$extra" "$port"
   tmux attach -t "$session"
 
   # attach returns either because the session ended or because the user

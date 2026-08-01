@@ -52,6 +52,12 @@ FRESH_WINDOW="${FRESH_WINDOW_MINUTES:-$(( (COOLDOWN * 4 + 59) / 60 ))}"
 EXPECT_CONFIG_DIR="${EXPECT_CONFIG_DIR:-}"
 EXPECT_PANE_DIR="${EXPECT_PANE_DIR:-}"
 
+# Port of the proxy this session owns, set by claude-failover. The whole point
+# of a per-session port is that stopping it cannot disturb anyone else, so this
+# watcher shuts it down on the way out. Unset means the shared proxy, which is
+# never stopped because another session may be using it.
+SESSION_PORT="${SESSION_PORT:-}"
+
 # Absolute path rather than a bare name: the relaunch is typed into the pane's
 # shell, so this must not depend on that shell's PATH.
 CLAUDE_LOCAL="${CLAUDE_LOCAL_BIN:-$HOME/.local/bin/claude-local}"
@@ -185,6 +191,25 @@ _cf_status() {
   tmux set-option -t "$sess" status-style "bg=$bg,fg=$fg" 2>/dev/null
   tmux set-option -t "$sess" status-right " $text   %H:%M " 2>/dev/null
   LAST_STATUS="$1"
+}
+
+# Stop the proxy this session started. Safe precisely because the port was
+# allocated for this session alone -- but still verified to be a litellm before
+# killing, in case the port was recycled by something else in the meantime.
+stop_session_proxy() {
+  [ -n "$SESSION_PORT" ] || return 0
+  [ "$SESSION_PORT" != "4000" ] || return 0     # never stop the shared default
+  local pid cmdline
+  pid="$(ss -ltnp 2>/dev/null | grep ":$SESSION_PORT " | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)"
+  [ -n "$pid" ] || return 0
+  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
+  case "$cmdline" in
+    *litellm*)
+      log "stopping this session's proxy on :$SESSION_PORT (pid $pid)"
+      kill "$pid" 2>/dev/null ;;
+    *)
+      log "port $SESSION_PORT is held by something that is not litellm — leaving it alone" ;;
+  esac
 }
 
 # The pane deliberately outlives Claude Code so a swap has somewhere to type the
@@ -389,13 +414,14 @@ else
 fi
 log "logging to $LOG"
 
-trap '_cf_status "red:white:failover: off"; log "monitor stopped"; exit 0' INT TERM
+trap '_cf_status "red:white:failover: off"; stop_session_proxy; log "monitor stopped"; exit 0' INT TERM
 
 IDLE=0
 
 while true; do
   if ! pane_alive; then
     log "pane $PANE is gone — exiting"
+    stop_session_proxy
     exit 0
   fi
 
@@ -415,6 +441,7 @@ while true; do
       if [ "$IDLE" -ge "$IDLE_EXIT" ]; then
         log "Claude Code gone for ${IDLE}s — exiting"
         _cf_status "red:white:failover: off"
+        stop_session_proxy
         close_pane_if_idle
         exit 0
       fi

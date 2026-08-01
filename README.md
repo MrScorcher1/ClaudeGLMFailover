@@ -117,17 +117,27 @@ claude --continue            # or your profile-specific launcher
 
 It is not automatic because every hop discards the prompt cache, so an automatic return would re-read the full context against the quota that just reset.
 
-### The proxy outlives your session
+### Proxy lifetime
 
-`claude-local` starts the LiteLLM proxy and never stops it — it reuses whatever is already answering on the port. Nothing cleans it up, so it sits there (~290 MB idle) until you kill it or reboot. It is not a service and will not come back on its own.
+**A `claude-failover` session gets its own proxy** on a port allocated from 4100–4199, and the watcher stops it on the way out. Nothing lingers, and because the port belongs to that session alone, stopping it cannot disturb anything else.
+
+The proxy starts **lazily, at swap time** — while you are on your subscription no proxy is needed, so none is started.
+
+The port is carried into the swap alongside `CLAUDE_CONFIG_DIR`:
+
+```
+relaunch command: CLAUDE_CONFIG_DIR=/home/you/.claude-personal CLAUDE_LOCAL_PORT=4169 ~/.local/bin/claude-local --continue
+```
+
+That matters: if the port did not survive, the relaunch would allocate a different one, start a **second** proxy, and orphan the session's. Each proxy also writes its own `~/glm-proxy/litellm-<port>.log`, since a shared path would be truncated by whichever started last.
+
+**A bare `claude-local` still uses the shared port 4000** and is never stopped automatically — it has no owning session, and another terminal may be using it. Stop it by hand when you want the memory back:
 
 ```bash
 kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
 ```
 
-Nothing breaks — the next launch or swap starts a fresh one and waits ~4s for it. Kill it by port rather than `pkill -f litellm`, which would also take down any unrelated LiteLLM instance.
-
-Shutdown is deliberately not automatic: the proxy is shared by port, so a watcher stopping "its" proxy could break a `claude-local` session running in another terminal mid-request. Making that safe means reference-counting sessions, which is more machinery, and more failure modes, than reclaiming the memory is worth.
+Kill by port rather than `pkill -f litellm`, which would also take down any unrelated LiteLLM instance.
 
 ---
 
@@ -209,6 +219,9 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `FRESH_WINDOW_MINUTES` | 4× cooldown | Transcript freshness window for the pre-swap guard |
 | `EXPECT_CONFIG_DIR` | unset | Profile the guard checks. Unset disables the guard. |
 | `EXPECT_PANE_DIR` | unset | Directory the session started in |
+| `SESSION_PORT` | unset | Proxy port this session owns; stopped on exit. Unset means the shared 4000, never stopped. |
+| `CLAUDE_LOCAL_PORT` | 4000 | Port `claude-local` runs the proxy on |
+| `CLAUDE_FAILOVER_PORT_LO` / `_HI` | 4100 / 4199 | Range per-session ports are allocated from |
 | `LOG_FILE` | `~/.claude-failover.log` | Log destination |
 
 ---

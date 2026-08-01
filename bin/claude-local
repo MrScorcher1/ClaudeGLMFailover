@@ -2,9 +2,14 @@
 set -euo pipefail
 
 PROXY_DIR="$HOME/glm-proxy"
-PORT=4000
+# Port the translator listens on. claude-failover allocates a free port per
+# session and passes it in, so each session owns its own proxy and can stop it
+# on exit. A bare `claude-local` keeps the shared default.
+PORT="${CLAUDE_LOCAL_PORT:-4000}"
 MODEL="glm-5.2"
-LOG="$PROXY_DIR/litellm.log"
+# One log per port: with a proxy per session, a single shared path would be
+# truncated by whichever started last.
+LOG="$PROXY_DIR/litellm-$PORT.log"
 
 # Absolute path so this does not depend on the calling shell's PATH. Point it
 # at a venv or pipx binary if you installed litellm that way.
