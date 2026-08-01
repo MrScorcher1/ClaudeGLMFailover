@@ -193,6 +193,7 @@ Splitting is done by `xargs`, which understands quoting without invoking a shell
 | `KEY_PROMPT_TIMEOUT_SECONDS` | 15 | Max wait for the one-time API-key approval prompt |
 | `CLOSE_PANE_ON_EXIT` | 1 | Close the pane when the watcher gives up on it (`0` = leave it) |
 | `CLOSE_PANE_DELAY_SECONDS` | 3 | Pause before closing, so the stopped state is readable |
+| `FINAL_WARN_SECONDS` | 10 | Countdown turns from yellow to red for the last this many seconds |
 | `FRESH_WINDOW_MINUTES` | 4× cooldown | Transcript freshness window for the pre-swap guard |
 | `EXPECT_CONFIG_DIR` | unset | Profile the guard checks. Unset disables the guard. |
 | `EXPECT_PANE_DIR` | unset | Directory the session started in |
@@ -222,7 +223,8 @@ Those printed lines scroll away the moment tmux attaches, so the state also live
 |---|---|
 | green **failover: armed** | watching, subscription session |
 | orange **failover: on GLM-5.2** | swapped |
-| red **failover: stopping in Ns** | Claude Code has exited; counting down to give up |
+| yellow **failover: stopping in Ns** | Claude Code has exited; counting down to give up |
+| red **failover: stopping in Ns** | last `FINAL_WARN_SECONDS` (default 10) before it does |
 | red **failover: off** | watcher stopped |
 
 The countdown starts the moment Claude Code exits, so the idle window is visible rather than a silent wait, and it returns to green if you start Claude again in that pane before it expires. It is set with `-t <session>`, so it applies only to sessions this tool created and dies with them — if you run `claude-failover` inside your own tmux session, your status bar is left alone.

@@ -36,6 +36,7 @@ WD_COOLDOWN="${WD_COOLDOWN_SECONDS:-60}" # short throttle for the self-correctin
 KEY_PROMPT_TIMEOUT="${KEY_PROMPT_TIMEOUT_SECONDS:-15}" # max wait for the one-time API key prompt
 CLOSE_PANE="${CLOSE_PANE_ON_EXIT:-1}"  # close the pane when the watcher gives up on it (0 = leave it)
 CLOSE_PANE_DELAY="${CLOSE_PANE_DELAY_SECONDS:-3}" # let the "stopped" state be visible before the pane goes
+FINAL_WARN="${FINAL_WARN_SECONDS:-10}"   # countdown turns red for the last this-many seconds
 LOG="${LOG_FILE:-$HOME/.claude-failover.log}"
 
 # Freshness window for the pre-swap guard, in MINUTES, derived from the longest
@@ -409,7 +410,14 @@ while true; do
     # keeps claiming "armed" during a window in which the watcher is actually
     # about to give up, and the wait looks like nothing is happening.
     if [ "$IDLE_EXIT" -gt 0 ]; then
-      _cf_status "#[fg=white,bg=red] failover: stopping in $((IDLE_EXIT - IDLE))s #[default] %H:%M "
+      REMAINING=$((IDLE_EXIT - IDLE))
+      # Yellow while there is still time to come back, red only once it is
+      # nearly gone. A countdown that is red throughout is just noise.
+      if [ "$REMAINING" -le "$FINAL_WARN" ]; then
+        _cf_status "#[fg=white,bg=red] failover: stopping in ${REMAINING}s #[default] %H:%M "
+      else
+        _cf_status "#[fg=black,bg=yellow] failover: stopping in ${REMAINING}s #[default] %H:%M "
+      fi
     fi
   fi
 
