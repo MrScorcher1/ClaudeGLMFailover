@@ -164,16 +164,27 @@ _cf_realpath() {
 # session rather than only in a log. Restricted to sessions claude-failover
 # created (cf-*): if the user ran this inside their own tmux session, their
 # status bar is theirs and we leave it alone.
-STATUS_WATCHING="#[fg=black,bg=green] failover: armed #[default] %H:%M "
+STATUS_WATCHING="green:black:failover: armed"
 LAST_STATUS=""
 
+# Colour the WHOLE bar, not just the right segment. status-right alone leaves
+# most of the bar tmux's default green, which reads as "fine" while the right
+# hand end says the opposite.
+#   arg: "<bg>:<fg>:<text>"
 _cf_status() {
   [ "$1" = "$LAST_STATUS" ] && return 0     # skip redundant tmux calls
-  local sess
+  local sess bg fg text
   sess="$(tmux display-message -p -t "$PANE" '#{session_name}' 2>/dev/null)"
   case "$sess" in
-    cf-*) tmux set-option -t "$sess" status-right "$1" 2>/dev/null && LAST_STATUS="$1" ;;
+    cf-*) ;;
+    *) return 0 ;;
   esac
+  bg="${1%%:*}"
+  fg="${1#*:}"; fg="${fg%%:*}"
+  text="${1#*:*:}"
+  tmux set-option -t "$sess" status-style "bg=$bg,fg=$fg" 2>/dev/null
+  tmux set-option -t "$sess" status-right " $text   %H:%M " 2>/dev/null
+  LAST_STATUS="$1"
 }
 
 # The pane deliberately outlives Claude Code so a swap has somewhere to type the
@@ -355,7 +366,7 @@ swap_to_glm() {
   if wait_for_session; then
     _cf_answer_key_prompt
     LAST_SWAP="$(date +%s)"
-    STATUS_WATCHING="#[fg=white,bg=colour33] failover: on GLM-5.2 #[default] %H:%M "
+    STATUS_WATCHING="colour33:white:failover: on GLM-5.2"
     _cf_status "$STATUS_WATCHING"
     log "relaunched via claude-local --continue — now on GLM-5.2"
     log "when your limit resets, exit and resume with your normal launcher + --continue"
@@ -378,7 +389,7 @@ else
 fi
 log "logging to $LOG"
 
-trap '_cf_status "#[fg=black,bg=red] failover: off #[default] %H:%M "; log "monitor stopped"; exit 0' INT TERM
+trap '_cf_status "red:white:failover: off"; log "monitor stopped"; exit 0' INT TERM
 
 IDLE=0
 
@@ -393,47 +404,50 @@ while true; do
   # normal /exit or Ctrl-C. Without this the watcher would survive every clean
   # exit forever, and a stale watcher blocks a new one on the same pane,
   # leaving a later session silently unwatched.
-  if foreground_is_claude; then
-    IDLE=0
-    # Claude is back (or never left) — restore whichever "watching" state
-    # applies. After a swap that is the GLM one, not the original.
-    _cf_status "$STATUS_WATCHING"
-  else
-    IDLE=$((IDLE + POLL))
-    if [ "$IDLE_EXIT" -gt 0 ] && [ "$IDLE" -ge "$IDLE_EXIT" ]; then
-      log "Claude Code gone for ${IDLE}s — exiting"
-      _cf_status "#[fg=black,bg=red] failover: off #[default] %H:%M "
-      close_pane_if_idle
-      exit 0
-    fi
-    # Count down in the status bar while Claude is gone. Without this the bar
-    # keeps claiming "armed" during a window in which the watcher is actually
-    # about to give up, and the wait looks like nothing is happening.
+  #
+  # While Claude is gone there is nothing to detect and a swap is impossible,
+  # so this branch ticks once a SECOND rather than once per POLL. The detection
+  # rate only matters while Claude is actually running, and a countdown that
+  # jumps five seconds at a time reads as broken.
+  if ! foreground_is_claude; then
+    IDLE=$((IDLE + 1))
     if [ "$IDLE_EXIT" -gt 0 ]; then
+      if [ "$IDLE" -ge "$IDLE_EXIT" ]; then
+        log "Claude Code gone for ${IDLE}s — exiting"
+        _cf_status "red:white:failover: off"
+        close_pane_if_idle
+        exit 0
+      fi
       REMAINING=$((IDLE_EXIT - IDLE))
       # Yellow while there is still time to come back, red only once it is
       # nearly gone. A countdown that is red throughout is just noise.
       if [ "$REMAINING" -le "$FINAL_WARN" ]; then
-        _cf_status "#[fg=white,bg=red] failover: stopping in ${REMAINING}s #[default] %H:%M "
+        _cf_status "red:white:failover: stopping in ${REMAINING}s"
       else
-        _cf_status "#[fg=black,bg=colour226] failover: stopping in ${REMAINING}s #[default] %H:%M "
+        _cf_status "colour226:black:failover: stopping in ${REMAINING}s"
       fi
+      sleep 1
+    else
+      sleep "$POLL"          # no idle exit configured: nothing to count down
     fi
+    continue
   fi
+
+  # Claude Code is running in the pane.
+  IDLE=0
+  # Restore whichever "watching" state applies. After a swap that is the GLM
+  # one, not the original.
+  _cf_status "$STATUS_WATCHING"
 
   now="$(date +%s)"
   if [ $((now - LAST_SWAP)) -ge "$COOLDOWN" ] && \
      [ $((now - LAST_REFUSAL)) -ge "$REFUSAL_WAIT" ]; then
     tail_text="$(pane_tail)"
     if grep -Eqi -- "$PATTERN" <<< "$tail_text"; then
-      if foreground_is_claude; then
-        swap_to_glm
-        # swap_to_glm runs synchronously, so no polling happens while Claude is
-        # intentionally absent. Reset so a slow swap cannot trip the idle exit.
-        IDLE=0
-      else
-        log "limit text seen but Claude is not the foreground process — skipping"
-      fi
+      swap_to_glm
+      # swap_to_glm runs synchronously, so no polling happens while Claude is
+      # intentionally absent. Reset so a slow swap cannot trip the idle exit.
+      IDLE=0
     fi
   fi
 

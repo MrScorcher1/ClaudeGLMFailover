@@ -305,8 +305,8 @@ claude-failover() {
   # is nothing on screen telling you the watcher is armed. Scoped with -t to
   # this session only, so a user's own tmux config is untouched and the setting
   # dies with the session.
-  tmux set-option -t "$session" status-right \
-    "#[fg=black,bg=green] failover: armed #[default] %H:%M " 2>/dev/null
+  tmux set-option -t "$session" status-style "bg=green,fg=black" 2>/dev/null
+  tmux set-option -t "$session" status-right " failover: armed   %H:%M " 2>/dev/null
   tmux set-option -t "$session" status-right-length 40 2>/dev/null
 
   # Quote each argument individually. A bare "$*" mangles anything containing

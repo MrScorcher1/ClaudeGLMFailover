@@ -229,6 +229,8 @@ Those printed lines scroll away the moment tmux attaches, so the state also live
 
 Green, yellow and red form one ramp about the watcher's lifecycle. The swapped state sits deliberately outside it in blue, because which backend you are on is not a severity — putting it in the warm ramp implied an urgency it does not have, and left it easy to confuse with the countdown at a glance.
 
+The whole bar carries the colour, not just its right-hand segment, and the countdown ticks once a second. While Claude is gone there is nothing to detect and a swap is impossible, so that branch runs at 1s and skips pane scanning entirely — detection still runs at `POLL_SECONDS` while Claude is actually running, which is the only time it matters.
+
 The countdown starts the moment Claude Code exits, so the idle window is visible rather than a silent wait, and it returns to green if you start Claude again in that pane before it expires. It is set with `-t <session>`, so it applies only to sessions this tool created and dies with them — if you run `claude-failover` inside your own tmux session, your status bar is left alone.
 
 **The pane closes once the watcher gives up on it**, so an empty tmux session does not linger. Only when the shell is idle: if an editor, a build, or any command is running there, closing the pane would destroy that work, so it is left open and the log says why.
