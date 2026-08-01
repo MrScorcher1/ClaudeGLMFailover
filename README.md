@@ -117,6 +117,18 @@ claude --continue            # or your profile-specific launcher
 
 It is not automatic because every hop discards the prompt cache, so an automatic return would re-read the full context against the quota that just reset.
 
+### The proxy outlives your session
+
+`claude-local` starts the LiteLLM proxy and never stops it — it reuses whatever is already answering on the port. Nothing cleans it up, so it sits there (~290 MB idle) until you kill it or reboot. It is not a service and will not come back on its own.
+
+```bash
+kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
+```
+
+Nothing breaks — the next launch or swap starts a fresh one and waits ~4s for it. Kill it by port rather than `pkill -f litellm`, which would also take down any unrelated LiteLLM instance.
+
+Shutdown is deliberately not automatic: the proxy is shared by port, so a watcher stopping "its" proxy could break a `claude-local` session running in another terminal mid-request. Making that safe means reference-counting sessions, which is more machinery, and more failure modes, than reclaiming the memory is worth.
+
 ---
 
 ## Profiles
