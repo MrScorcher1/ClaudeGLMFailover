@@ -163,11 +163,15 @@ _cf_realpath() {
 # session rather than only in a log. Restricted to sessions claude-failover
 # created (cf-*): if the user ran this inside their own tmux session, their
 # status bar is theirs and we leave it alone.
+STATUS_WATCHING="#[fg=black,bg=green] failover: armed #[default] %H:%M "
+LAST_STATUS=""
+
 _cf_status() {
+  [ "$1" = "$LAST_STATUS" ] && return 0     # skip redundant tmux calls
   local sess
   sess="$(tmux display-message -p -t "$PANE" '#{session_name}' 2>/dev/null)"
   case "$sess" in
-    cf-*) tmux set-option -t "$sess" status-right "$1" 2>/dev/null ;;
+    cf-*) tmux set-option -t "$sess" status-right "$1" 2>/dev/null && LAST_STATUS="$1" ;;
   esac
 }
 
@@ -350,7 +354,8 @@ swap_to_glm() {
   if wait_for_session; then
     _cf_answer_key_prompt
     LAST_SWAP="$(date +%s)"
-    _cf_status "#[fg=black,bg=colour208] failover: on GLM-5.2 #[default] %H:%M "
+    STATUS_WATCHING="#[fg=black,bg=colour208] failover: on GLM-5.2 #[default] %H:%M "
+    _cf_status "$STATUS_WATCHING"
     log "relaunched via claude-local --continue — now on GLM-5.2"
     log "when your limit resets, exit and resume with your normal launcher + --continue"
     return 0
@@ -389,6 +394,9 @@ while true; do
   # leaving a later session silently unwatched.
   if foreground_is_claude; then
     IDLE=0
+    # Claude is back (or never left) — restore whichever "watching" state
+    # applies. After a swap that is the GLM one, not the original.
+    _cf_status "$STATUS_WATCHING"
   else
     IDLE=$((IDLE + POLL))
     if [ "$IDLE_EXIT" -gt 0 ] && [ "$IDLE" -ge "$IDLE_EXIT" ]; then
@@ -396,6 +404,12 @@ while true; do
       _cf_status "#[fg=black,bg=red] failover: off #[default] %H:%M "
       close_pane_if_idle
       exit 0
+    fi
+    # Count down in the status bar while Claude is gone. Without this the bar
+    # keeps claiming "armed" during a window in which the watcher is actually
+    # about to give up, and the wait looks like nothing is happening.
+    if [ "$IDLE_EXIT" -gt 0 ]; then
+      _cf_status "#[fg=white,bg=red] failover: stopping in $((IDLE_EXIT - IDLE))s #[default] %H:%M "
     fi
   fi
 
