@@ -282,6 +282,21 @@ close_pane_if_idle() {
     log "  claude --continue      (or your usual launcher)"
     return 0
   fi
+
+  # Only clean up sessions this tool created. Running claude-failover from
+  # inside your own tmux session gives the watcher one of YOUR panes, and
+  # closing it would take the window with it if it were the last one. Same
+  # rule _cf_status applies to the status bar: what we did not create is not
+  # ours to change.
+  local sess
+  sess="$(tmux display-message -p -t "$PANE" '#{session_name}' 2>/dev/null)"
+  case "$sess" in
+    cf-*) ;;
+    *)
+      log "leaving pane $PANE open — session '$sess' is yours, not one this tool created"
+      return 0 ;;
+  esac
+
   local cmd
   cmd="$(tmux display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null)"
   case "$cmd" in
