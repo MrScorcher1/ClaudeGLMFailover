@@ -207,7 +207,9 @@ claude-failover() {
     if saved="$(_cf_load_profile)" && [ -n "$saved" ]; then
       _cf_print_profile "$saved"
     else
-      echo "claude-failover: no profile saved"
+      # Name what a bare run would actually use, not just "nothing saved" —
+      # the effective default is the useful answer.
+      echo "claude-failover: no profile saved — a bare run would use $HOME/.claude ($(_cf_classify "$HOME/.claude"))"
       echo "  set one with: claude-failover --profile <name|/abs/path>"
     fi
     return 0
