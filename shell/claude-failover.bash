@@ -200,10 +200,33 @@ _cf_free_port() {
 }
 
 _cf_start_watcher() {
-  local pane="$1" dir="$2" extra="$3" port="$4" pane_dir
+  local pane="$1" dir="$2" extra="$3" port="$4" pane_dir localbin
+  # Honour CLAUDE_LOCAL_BIN here as well as in the watcher. Without this the
+  # watcher would check one path for executability and relaunch a different
+  # one, because RELAUNCH_CMD is built from this variable.
+  localbin="${CLAUDE_LOCAL_BIN:-$_CF_LOCAL}"
+
+  # Pre-flight. Announcing "armed" without checking is the worst possible
+  # failure for this tool: nohup fails silently in the background, the message
+  # still prints, and the gap is only discovered at the moment the failover was
+  # supposed to save the session. Both of these have been observed.
+  if [ ! -x "$_CF_WATCHER" ]; then
+    echo "claude-failover: NOT armed — no watcher at $_CF_WATCHER" >&2
+    echo "  install it with:  cp bin/claude-failover.sh ~/claude-failover.sh && chmod +x ~/claude-failover.sh" >&2
+    echo "  Claude Code will still start, but nothing will fail over." >&2
+    return 1
+  fi
+  if [ ! -x "$localbin" ]; then
+    echo "claude-failover: NOT armed — no launcher at $localbin" >&2
+    echo "  install it with:  cp bin/claude-local ~/.local/bin/claude-local && chmod +x ~/.local/bin/claude-local" >&2
+    echo "  Claude Code will still start, but nothing will fail over." >&2
+    return 1
+  fi
+
   # Never run two watchers on the same pane. The trailing $ anchors the match:
   # without it, pane "%3" also matches a watcher running on "%30".
   if pgrep -f "claude-failover\.sh ${pane}\$" >/dev/null 2>&1; then
+    echo "claude-failover: watcher already running on pane $pane — leaving it alone"
     return 0
   fi
   pane_dir="$(tmux display-message -p -t "$pane" '#{pane_current_path}' 2>/dev/null)"
@@ -213,7 +236,7 @@ _cf_start_watcher() {
   # The port must be carried into the swap exactly like the config dir. If it
   # were not, the relaunch would allocate a different one, start a SECOND proxy
   # and orphan this session's.
-  RELAUNCH_CMD="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") CLAUDE_LOCAL_PORT=$port $_CF_LOCAL --continue${extra}" \
+  RELAUNCH_CMD="CLAUDE_CONFIG_DIR=$(printf '%q' "$dir") CLAUDE_LOCAL_PORT=$port $localbin --continue${extra}" \
   EXPECT_CONFIG_DIR="$dir" \
   EXPECT_PANE_DIR="$pane_dir" \
   SESSION_PORT="$port" \

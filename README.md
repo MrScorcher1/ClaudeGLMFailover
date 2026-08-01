@@ -322,6 +322,8 @@ Verified end to end on WSL2 (Ubuntu, tmux 3.6, Claude Code 2.1.220, LiteLLM 1.89
 - A profile at a path fitting no naming convention, given as an absolute path
 - Shell isolation: no `ANTHROPIC_*` leakage
 - Proxy bind: `127.0.0.1:<port>` only, with the same request refused when sent to the machine's LAN address. Confirmed the pre-fix behaviour too — without `--host`, that request returned 200 with no auth header.
+- Pre-flight honesty: with the watcher script or `claude-local` missing, the launcher says **NOT armed** and names the missing file rather than reporting armed. Both cases previously printed "watcher armed" and started nothing.
+- macOS code paths exercised on Linux behind a `PATH` shim hiding `ss`: port-busy detection, free-port selection, and a real proxy identified and stopped through `lsof`
 - Per-session proxy lifecycle: started by `claude-local` on the session's port, stopped by the watcher on idle exit, port released
 
 **Not verifiable in advance:** whether your real usage-limit message matches `PATTERN`. Until you hit a genuine limit and confirm the swap fired, treat the failover half as provisional.
