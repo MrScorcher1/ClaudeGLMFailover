@@ -139,6 +139,18 @@ kill "$(ss -ltnp | grep ':4000' | grep -o 'pid=[0-9]*' | cut -d= -f2)"
 
 Kill by port rather than `pkill -f litellm`, which would also take down any unrelated LiteLLM instance.
 
+### The proxy is loopback-only, deliberately
+
+`claude-local` starts LiteLLM with `--host 127.0.0.1`. **Do not remove that flag.** LiteLLM's CLI defaults to `0.0.0.0`, and this proxy holds your NVIDIA key while accepting requests with no authentication — no `master_key` is set, because Claude Code sends the placeholder `ANTHROPIC_API_KEY=dummy-not-used`. Bound to `0.0.0.0`, anything that can route to this machine could spend your key.
+
+Verify at any time while a session is up:
+
+```bash
+ss -ltn | grep 41   # expect 127.0.0.1:<port>, never 0.0.0.0:<port>
+```
+
+If you do need the proxy reachable from another host, set a `master_key` in `proxy/config.yaml` and pass it as `ANTHROPIC_API_KEY` in `claude-local` before you widen the bind — not after.
+
 ---
 
 ## Profiles
